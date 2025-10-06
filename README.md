@@ -8,7 +8,7 @@
 
 Watch Kubernetes deployment rollouts with live progress updates and status tracking.
 
-![Screenshot](/ivoronin/kubectl-watch-rollout/raw/main/screenshot.png)
+![Screenshot](https://raw.githubusercontent.com/ivoronin/kubectl-watch-rollout/master/screenshot.png)
 
 ## Features
 
