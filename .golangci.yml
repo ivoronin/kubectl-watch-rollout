@@ -1,0 +1,68 @@
+version: "2"
+
+run:
+  timeout: 5m
+  tests: true
+  modules-download-mode: readonly
+
+linters:
+  default: standard
+  enable:
+    # Additional useful linters beyond standard
+    - revive        # Fast, configurable linter
+    - misspell      # Finds commonly misspelled English words
+    - unconvert     # Remove unnecessary type conversions
+    - unparam       # Find unused function parameters
+    - gosec         # Security-focused linter
+    - bodyclose     # Check HTTP response body is closed
+    - nilerr        # Find code returning nil even if it checks error
+    - errname       # Check error naming conventions
+    - errorlint     # Find code that will cause problems with Go 1.13 error wrapping
+
+  exclusions:
+    rules:
+      # Exclude some linters from running on tests files
+      - path: _test\.go
+        linters:
+          - gosec
+          - errcheck
+
+      # Renderer writes to stdout/stderr - errors not actionable in CLI tool
+      - path: internal/monitor/renderer\.go
+        linters:
+          - errcheck
+
+  settings:
+    errcheck:
+      check-type-assertions: true
+      check-blank: false
+
+    govet:
+      enable-all: true
+      disable:
+        - shadow        # Too noisy for this codebase
+        - fieldalignment # Struct field order optimization - not critical for CLI tool
+
+    revive:
+      rules:
+        - name: exported
+          disabled: false
+        - name: unexported-return
+          disabled: true
+        - name: var-naming
+          disabled: false
+        - name: package-comments
+          disabled: true
+
+    gosec:
+      excludes:
+        - G104  # Audit errors not checked (covered by errcheck)
+
+formatters:
+  enable:
+    - gofmt         # Check code formatting
+    - goimports     # Check import formatting
+
+issues:
+  max-issues-per-linter: 0
+  max-same-issues: 0

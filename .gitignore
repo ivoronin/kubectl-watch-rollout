@@ -1,0 +1,7 @@
+# Go-generated files
+bin/
+*.test
+*.out
+vendor/
+coverage.txt
+dist

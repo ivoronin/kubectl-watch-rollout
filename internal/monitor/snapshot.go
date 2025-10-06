@@ -1,0 +1,165 @@
+// Package monitor provides Kubernetes deployment rollout monitoring functionality.
+//
+// This file contains snapshot construction and rollout state calculations.
+package monitor
+
+import (
+	"fmt"
+	"sort"
+	"time"
+
+	appsv1 "k8s.io/api/apps/v1"
+	"k8s.io/apimachinery/pkg/util/intstr"
+)
+
+// ReplicaSetState groups pod counts for a ReplicaSet at different lifecycle stages.
+// Current is total pods. Ready passed readiness probes. Available for minReadySeconds.
+type ReplicaSetState struct {
+	Current   int32
+	Ready     int32
+	Available int32
+}
+
+// RolloutSnapshot represents a snapshot of the deployment rollout state
+// This is a pure domain DTO with no infrastructure dependencies
+type RolloutSnapshot struct {
+	// Deployment identification
+	DeploymentName string
+	NewRSName      string // empty if no new ReplicaSet
+
+	// Rollout strategy
+	StrategyType   string
+	MaxSurge       string
+	MaxUnavailable string
+
+	// Pod state tracking (grouped by ReplicaSet)
+	Desired int32
+	NewRS   ReplicaSetState
+	OldRS   ReplicaSetState
+
+	// Progress (0-1 ratios)
+	NewProgress float64
+	OldProgress float64
+
+	// Time tracking
+	StartTime           time.Time
+	SnapshotTime        time.Time
+	ProgressUpdateTime  *time.Time // lastUpdateTime from Progressing condition
+	EstimatedCompletion *time.Time // renamed from ETA for clarity
+
+	// Status and warnings
+	Status   RolloutStatus
+	Warnings []WarningEntry
+}
+
+// getProgressUpdateTime extracts LastUpdateTime from Progressing condition.
+// Used for deadline calculations as it resets when progress is made. Returns nil if no condition.
+func getProgressUpdateTime(deployment *appsv1.Deployment) *time.Time {
+	for _, c := range deployment.Status.Conditions {
+		if c.Type == appsv1.DeploymentProgressing {
+			return &c.LastUpdateTime.Time
+		}
+	}
+	return nil
+}
+
+// buildSnapshot constructs a RolloutSnapshot with all calculated data
+func (c *Controller) buildSnapshot(deployment *appsv1.Deployment, oldRSs []*appsv1.ReplicaSet, newRS *appsv1.ReplicaSet) *RolloutSnapshot {
+	// Sort warnings by count (descending), then message (ascending)
+	warnings := make([]WarningEntry, 0, len(c.warnings))
+	for msg, count := range c.warnings {
+		warnings = append(warnings, WarningEntry{Message: msg, Count: count})
+	}
+	sort.Slice(warnings, func(i, j int) bool {
+		if warnings[i].Count != warnings[j].Count {
+			return warnings[i].Count > warnings[j].Count
+		}
+		return warnings[i].Message < warnings[j].Message
+	})
+
+	// Extract strategy parameters
+	strategy := deployment.Spec.Strategy
+	maxSurge := DefaultMaxSurge
+	maxUnavailable := DefaultMaxUnavailable
+	if strategy.Type == appsv1.RollingUpdateDeploymentStrategyType && strategy.RollingUpdate != nil {
+		if strategy.RollingUpdate.MaxSurge != nil {
+			maxSurge = formatIntOrPercent(*strategy.RollingUpdate.MaxSurge)
+		}
+		if strategy.RollingUpdate.MaxUnavailable != nil {
+			maxUnavailable = formatIntOrPercent(*strategy.RollingUpdate.MaxUnavailable)
+		}
+	}
+
+	// Calculate pod states
+	desired := getInt32OrDefault(deployment.Spec.Replicas, defaultReplicaCount)
+
+	newRSState := ReplicaSetState{}
+	var startTime time.Time
+	var newRSName string
+
+	if newRS != nil {
+		newRSName = newRS.Name
+		newRSState.Current = newRS.Status.Replicas
+		newRSState.Ready = newRS.Status.ReadyReplicas
+		newRSState.Available = newRS.Status.AvailableReplicas
+		startTime = newRS.CreationTimestamp.Time
+	}
+
+	oldRSState := ReplicaSetState{}
+	for _, rs := range oldRSs {
+		oldRSState.Current += rs.Status.Replicas
+		oldRSState.Ready += rs.Status.ReadyReplicas
+		oldRSState.Available += rs.Status.AvailableReplicas
+	}
+
+	// Calculate progress ratios
+	var newProgress, oldProgress float64
+	var estimatedCompletion *time.Time
+
+	if desired > 0 {
+		newProgress = float64(newRSState.Available) / float64(desired)
+		oldProgress = float64(oldRSState.Available) / float64(desired)
+
+		// Calculate ETA if progress is meaningful but not complete
+		if newProgress >= MinProgressForETA && newProgress < 1.0 {
+			elapsed := time.Since(startTime)
+			totalEstimated := time.Duration(float64(elapsed) / newProgress)
+
+			// Only set ETA if realistic (less than MaxRealisticETAHours)
+			if totalEstimated < MaxRealisticETAHours*time.Hour {
+				eta := startTime.Add(totalEstimated)
+				if time.Until(eta) > 0 {
+					estimatedCompletion = &eta
+				}
+			}
+		}
+	}
+
+	return &RolloutSnapshot{
+		DeploymentName:      deployment.Name,
+		NewRSName:           newRSName,
+		StrategyType:        string(strategy.Type),
+		MaxSurge:            maxSurge,
+		MaxUnavailable:      maxUnavailable,
+		Desired:             desired,
+		NewRS:               newRSState,
+		OldRS:               oldRSState,
+		NewProgress:         newProgress,
+		OldProgress:         oldProgress,
+		StartTime:           startTime,
+		SnapshotTime:        time.Now(),
+		ProgressUpdateTime:  getProgressUpdateTime(deployment),
+		EstimatedCompletion: estimatedCompletion,
+		Status:              CalculateRolloutStatus(deployment, newRS),
+		Warnings:            warnings,
+	}
+}
+
+// formatIntOrPercent formats Kubernetes IntOrString for display.
+// Returns percentage (e.g., "25%") or decimal (e.g., "3").
+func formatIntOrPercent(val intstr.IntOrString) string {
+	if val.Type == intstr.String {
+		return val.StrVal
+	}
+	return fmt.Sprintf("%d", val.IntVal)
+}
