@@ -12,66 +12,66 @@ spec:
         arch: amd64
     {{addURIAndSha "https://github.com/ivoronin/kubectl-watch-rollout/releases/download/{{ .TagName }}/kubectl-watch-rollout_{{ .TagName }}_linux_amd64.tar.gz" .TagName }}
     files:
-    - from: kubectl-watch-rollout
+    - from: kubectl-watch_rollout
       to: "."
     - from: LICENSE
       to: "."
-    bin: kubectl-watch-rollout
+    bin: kubectl-watch_rollout
   - selector:
       matchLabels:
         os: linux
         arch: arm64
     {{addURIAndSha "https://github.com/ivoronin/kubectl-watch-rollout/releases/download/{{ .TagName }}/kubectl-watch-rollout_{{ .TagName }}_linux_arm64.tar.gz" .TagName }}
     files:
-    - from: kubectl-watch-rollout
+    - from: kubectl-watch_rollout
       to: "."
     - from: LICENSE
       to: "."
-    bin: kubectl-watch-rollout
+    bin: kubectl-watch_rollout
   - selector:
       matchLabels:
         os: darwin
         arch: amd64
     {{addURIAndSha "https://github.com/ivoronin/kubectl-watch-rollout/releases/download/{{ .TagName }}/kubectl-watch-rollout_{{ .TagName }}_darwin_amd64.tar.gz" .TagName }}
     files:
-    - from: kubectl-watch-rollout
+    - from: kubectl-watch_rollout
       to: "."
     - from: LICENSE
       to: "."
-    bin: kubectl-watch-rollout
+    bin: kubectl-watch_rollout
   - selector:
       matchLabels:
         os: darwin
         arch: arm64
     {{addURIAndSha "https://github.com/ivoronin/kubectl-watch-rollout/releases/download/{{ .TagName }}/kubectl-watch-rollout_{{ .TagName }}_darwin_arm64.tar.gz" .TagName }}
     files:
-    - from: kubectl-watch-rollout
+    - from: kubectl-watch_rollout
       to: "."
     - from: LICENSE
       to: "."
-    bin: kubectl-watch-rollout
+    bin: kubectl-watch_rollout
   - selector:
       matchLabels:
         os: windows
         arch: amd64
     {{addURIAndSha "https://github.com/ivoronin/kubectl-watch-rollout/releases/download/{{ .TagName }}/kubectl-watch-rollout_{{ .TagName }}_windows_amd64.zip" .TagName }}
     files:
-    - from: kubectl-watch-rollout.exe
+    - from: kubectl-watch_rollout.exe
       to: "."
     - from: LICENSE
       to: "."
-    bin: kubectl-watch-rollout.exe
+    bin: kubectl-watch_rollout.exe
   - selector:
       matchLabels:
         os: windows
         arch: arm64
     {{addURIAndSha "https://github.com/ivoronin/kubectl-watch-rollout/releases/download/{{ .TagName }}/kubectl-watch-rollout_{{ .TagName }}_windows_arm64.zip" .TagName }}
     files:
-    - from: kubectl-watch-rollout.exe
+    - from: kubectl-watch_rollout.exe
       to: "."
     - from: LICENSE
       to: "."
-    bin: kubectl-watch-rollout.exe
+    bin: kubectl-watch_rollout.exe
   shortDescription: Watch Kubernetes deployment rollouts with live progress
   description: |
     kubectl watch-rollout monitors Kubernetes deployment rollouts in real-time,

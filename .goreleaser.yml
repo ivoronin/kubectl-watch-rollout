@@ -6,7 +6,7 @@ before:
 
 builds:
   - id: kubectl-watch-rollout
-    binary: kubectl-watch-rollout
+    binary: kubectl-watch_rollout
     main: ./cmd/kubectl-watch-rollout
     env:
       - CGO_ENABLED=0

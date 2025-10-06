@@ -1,7 +1,7 @@
 .PHONY: build clean test install lint
 
 build:
-	go build -o bin/kubectl-watch-rollout ./cmd/kubectl-watch-rollout
+	go build -o bin/kubectl-watch_rollout ./cmd/kubectl-watch-rollout
 
 clean:
 	rm -rf bin/
