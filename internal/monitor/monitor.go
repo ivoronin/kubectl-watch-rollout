@@ -36,14 +36,17 @@ type Controller struct {
 
 // New creates a new Controller instance for monitoring a deployment rollout
 func New(repo *DeploymentRepository, deploymentName string) (*Controller, error) {
+	return NewWithConfig(repo, deploymentName, DefaultConfig())
+}
+
+// NewWithConfig creates a new Controller instance with custom configuration
+func NewWithConfig(repo *DeploymentRepository, deploymentName string, config Config) (*Controller, error) {
 	if repo == nil {
 		return nil, fmt.Errorf("internal error: repository is required")
 	}
 	if deploymentName == "" {
 		return nil, fmt.Errorf("deployment name is required")
 	}
-
-	config := DefaultConfig()
 
 	return &Controller{
 		repo:           repo,
@@ -70,10 +73,14 @@ func (c *Controller) Run(ctx context.Context) error {
 
 		result := c.processDeployment(ctx, deployment)
 		if result.Done {
-			if result.Failed {
-				return ErrProgressDeadlineExceeded
+			// Only exit if --until-complete flag is set
+			if c.config.UntilComplete {
+				if result.Failed {
+					return ErrProgressDeadlineExceeded
+				}
+				return nil
 			}
-			return nil
+			// Default: continuous monitoring - continue loop
 		}
 
 		select {

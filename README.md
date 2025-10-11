@@ -12,6 +12,7 @@ Watch Kubernetes deployment rollouts with live progress updates and status track
 
 ## Features
 
+- **Continuous monitoring** - watches deployments across multiple rollouts by default
 - **Real-time monitoring** of deployment rollout progress
 - **Live progress bars** for new and old ReplicaSets showing pod lifecycle stages (Current → Ready → Available)
 - **Pod status counts** with detailed breakdown of Available, Ready, and Current pods
@@ -19,7 +20,8 @@ Watch Kubernetes deployment rollouts with live progress updates and status track
 - **Estimated time to completion** based on current rollout velocity
 - **Progress deadline tracking** with warnings when approaching timeout
 - **Automatic detection** of rollout success or failure
-- **Auto-discovery mode** - automatically finds and monitors active rollouts when no deployment specified
+- **Automatic rollout detection** - detects and monitors new rollouts as they occur
+- **Single-rollout mode** - use `--until-complete` flag to exit after one rollout (for CI/CD automation)
 
 ## Installation
 
@@ -43,10 +45,12 @@ make build
 
 ## Usage
 
-### Watch a specific deployment
+### Watch a deployment continuously (default)
+
+By default, the tool monitors deployments continuously across multiple rollouts. Exit with Ctrl+C when done.
 
 ```bash
-# By name
+# Continuous monitoring - watches across multiple rollouts
 kubectl watch-rollout my-deployment -n production
 
 # With resource type prefix (kubectl-style)
@@ -54,12 +58,24 @@ kubectl watch-rollout deployment/my-deployment -n production
 kubectl watch-rollout deployments.apps/my-deployment -n production
 ```
 
-### Auto-discover and watch active rollouts
+**Perfect for:**
+- Incident response (rollback → fix → verify cycles)
+- Development iteration (multiple deploys in a session)
+- Progressive rollouts (canary stages)
+
+### Single-rollout mode (for automation)
+
+Use `--until-complete` flag to exit after monitoring one rollout to its final state (success or failure). Exits with code 0 on success, code 1 on failure.
 
 ```bash
-# Automatically finds the first active rollout in namespace
-kubectl watch-rollout -n production
+# Exit after current rollout reaches final state (success or failure)
+kubectl watch-rollout my-deployment -n production --until-complete
 ```
+
+**Perfect for:**
+- CI/CD pipelines
+- Automation scripts
+- One-time rollout verification
 
 ### Using kubeconfig context
 
@@ -72,5 +88,12 @@ kubectl watch-rollout my-app --context=prod-cluster -n production
 The tool uses your current kubeconfig configuration. You can specify a different context, namespace, or kubeconfig file using standard kubectl flags:
 
 ```bash
-kubectl watch-rollout --kubeconfig=/path/to/config --context=my-context -n my-namespace
+kubectl watch-rollout my-deployment --kubeconfig=/path/to/config --context=my-context -n my-namespace
 ```
+
+## Exit Codes
+
+- **0**: Success (rollout completed successfully, or user pressed Ctrl+C)
+- **1**: Failure (rollout failed, deployment deleted, or API error)
+
+In continuous mode (default), the tool only exits on terminal errors or Ctrl+C. In single-rollout mode (`--until-complete`), it exits after the rollout reaches a final state (either success or failure).

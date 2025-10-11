@@ -58,11 +58,14 @@ func parseDeploymentArg(arg string) (string, error) {
 
 func main() {
 	configFlags := genericclioptions.NewConfigFlags(true)
+	var untilComplete bool
 
 	cmd := &cobra.Command{
-		Use:   "kubectl watch-rollout [DEPLOYMENT]",
+		Use:   "kubectl watch-rollout DEPLOYMENT",
 		Short: "Watch Kubernetes deployment rollouts with live progress updates",
 		Long: `Watch Kubernetes deployment rollouts with live progress updates and status tracking.
+
+By default, monitors deployments continuously across multiple rollouts. Exit with Ctrl+C when done.
 
 This command monitors your deployment rollout in real-time, showing:
   • Progress bars for new and old ReplicaSets
@@ -70,23 +73,17 @@ This command monitors your deployment rollout in real-time, showing:
   • Warning events and error messages
   • Estimated time to completion
   • Automatic detection of rollout success or failure
-
-When DEPLOYMENT is not specified, the command automatically discovers and monitors
-the first active rollout in your namespace. An "active rollout" is a deployment
-currently transitioning between ReplicaSet versions.`,
-		Example: `  # Watch a specific deployment by name
+  • Continuous monitoring across multiple rollouts (default behavior)`,
+		Example: `  # Continuous monitoring (default) - watches across multiple rollouts
   kubectl watch-rollout my-deployment -n production
+
+  # Single-rollout mode - exit after one rollout completes (for CI/CD)
+  kubectl watch-rollout my-deployment -n production --until-complete
 
   # Watch using resource type prefix (kubectl-style)
   kubectl watch-rollout deployment/my-deployment -n production
-  kubectl watch-rollout deployments.apps/my-deployment -n production
-
-  # Auto-discover and watch the first active rollout in namespace
-  kubectl watch-rollout -n production
-
-  # Watch in default namespace
-  kubectl watch-rollout my-app`,
-		Args:              cobra.MaximumNArgs(1),
+  kubectl watch-rollout deployments.apps/my-deployment -n production`,
+		Args:              cobra.ExactArgs(1),
 		SilenceUsage:      true,
 		SilenceErrors:     true,
 		DisableAutoGenTag: true,
@@ -110,29 +107,20 @@ currently transitioning between ReplicaSet versions.`,
 			ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 			defer cancel()
 
+			// Parse deployment name from argument
+			deploymentName, err := parseDeploymentArg(args[0])
+			if err != nil {
+				return err
+			}
+
 			// Create repository
 			repo := monitor.NewDeploymentRepository(clientset, namespace)
 
-			// Determine deployment name (from arg or auto-discovery)
-			var deploymentName string
-			if len(args) > 0 {
-				deploymentName, err = parseDeploymentArg(args[0])
-				if err != nil {
-					return err
-				}
-			} else {
-				// Auto-discover first active rollout
-				deploymentName, err = repo.FindActiveRollout(ctx)
-				if err != nil {
-					return fmt.Errorf("failed to search for active rollouts: %w", err)
-				}
-				if deploymentName == "" {
-					fmt.Println("No active deployment rollouts found in this namespace.")
-					return nil
-				}
-			}
+			// Create monitor with configuration
+			cfg := monitor.DefaultConfig()
+			cfg.UntilComplete = untilComplete
 
-			m, err := monitor.New(repo, deploymentName)
+			m, err := monitor.NewWithConfig(repo, deploymentName, cfg)
 			if err != nil {
 				return fmt.Errorf("failed to initialize monitoring: %w", err)
 			}
@@ -142,6 +130,7 @@ currently transitioning between ReplicaSet versions.`,
 	}
 
 	configFlags.AddFlags(cmd.Flags())
+	cmd.Flags().BoolVar(&untilComplete, "until-complete", false, "Exit after monitoring one rollout to completion (default: continuous monitoring)")
 
 	if err := cmd.Execute(); err != nil {
 		// Silent exit for progress deadline exceeded

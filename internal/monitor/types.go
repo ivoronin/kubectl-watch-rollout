@@ -38,6 +38,7 @@ type Config struct {
 	PollIntervalSeconds int
 	MaxWarnings         int
 	ProgressBarWidth    int
+	UntilComplete       bool // If true, exit after monitoring one rollout (default: false, continuous monitoring)
 }
 
 // DefaultConfig returns the default configuration
@@ -46,6 +47,7 @@ func DefaultConfig() Config {
 		PollIntervalSeconds: DefaultPollIntervalSeconds,
 		MaxWarnings:         DefaultMaxWarnings,
 		ProgressBarWidth:    DefaultProgressBarWidth,
+		UntilComplete:       false, // Default: continuous monitoring
 	}
 }
 
