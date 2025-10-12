@@ -109,31 +109,42 @@ func isDeploymentFailed(status appsv1.DeploymentStatus) bool {
 func CalculateRolloutStatus(deployment *appsv1.Deployment, newRS *appsv1.ReplicaSet) RolloutStatus {
 	status := deployment.Status
 
-	// Check for completion
 	if isDeploymentComplete(status) {
 		return StatusComplete
 	}
 
-	// Check for deadline exceeded
 	if isDeploymentFailed(status) {
 		return StatusDeadlineExceeded
 	}
 
-	// Check if approaching deadline (< 25% time remaining)
-	// Use Progressing condition's LastUpdateTime - this resets whenever progress is made,
-	// which matches Kubernetes' progress deadline behavior
-	progressTime := getProgressUpdateTime(deployment)
-	if progressTime != nil {
-		deadline := getInt32OrDefault(deployment.Spec.ProgressDeadlineSeconds, DefaultProgressDeadlineSeconds)
-		elapsed := time.Since(*progressTime)
-		// Warn when more than 75% of deadline has elapsed (less than 25% remaining)
-		warningThreshold := time.Duration(float64(deadline)*(1.0-DefaultDeadlineWarningThreshold)) * time.Second
-		if elapsed > warningThreshold {
-			return StatusDeadlineWarning
-		}
+	if isApproachingDeadline(deployment) {
+		return StatusDeadlineWarning
 	}
 
 	return StatusProgressing
+}
+
+// isApproachingDeadline checks if deployment is close to exceeding its progress deadline.
+// Uses Progressing condition's LastUpdateTime - this resets whenever progress is made,
+// which matches Kubernetes' progress deadline behavior.
+func isApproachingDeadline(deployment *appsv1.Deployment) bool {
+	progressTime := getProgressUpdateTime(deployment)
+	if progressTime == nil {
+		return false
+	}
+
+	deadline := getInt32OrDefault(deployment.Spec.ProgressDeadlineSeconds, DefaultProgressDeadlineSeconds)
+	elapsed := time.Since(*progressTime)
+	threshold := calculateDeadlineWarningThreshold(deadline)
+
+	return elapsed > threshold
+}
+
+// calculateDeadlineWarningThreshold computes when to show deadline warning.
+// Warns when more than 75% of deadline has elapsed (less than 25% remaining).
+func calculateDeadlineWarningThreshold(deadlineSeconds int32) time.Duration {
+	secondsUntilWarning := float64(deadlineSeconds) * (1.0 - DefaultDeadlineWarningThreshold)
+	return time.Duration(secondsUntilWarning) * time.Second
 }
 
 // hasCondition checks if a specific condition exists with given type and status.
