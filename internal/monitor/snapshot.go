@@ -4,7 +4,9 @@
 package monitor
 
 import (
+	"context"
 	"fmt"
+	"os"
 	"sort"
 	"time"
 
@@ -25,7 +27,7 @@ type ReplicaSetState struct {
 type RolloutSnapshot struct {
 	// Deployment identification
 	DeploymentName string
-	NewRSName      string // empty if no new ReplicaSet
+	NewRSName      string
 
 	// Rollout strategy
 	StrategyType   string
@@ -50,6 +52,8 @@ type RolloutSnapshot struct {
 	// Status and warnings
 	Status   RolloutStatus
 	Warnings []WarningEntry
+
+	IgnoredWarningsCount int
 }
 
 // getProgressUpdateTime extracts LastUpdateTime from Progressing condition.
@@ -64,18 +68,48 @@ func getProgressUpdateTime(deployment *appsv1.Deployment) *time.Time {
 }
 
 // buildSnapshot constructs a RolloutSnapshot with all calculated data
-func (c *Controller) buildSnapshot(deployment *appsv1.Deployment, oldRSs []*appsv1.ReplicaSet, newRS *appsv1.ReplicaSet) *RolloutSnapshot {
-	// Sort warnings by count (descending), then message (ascending)
-	warnings := make([]WarningEntry, 0, len(c.warnings))
-	for msg, count := range c.warnings {
-		warnings = append(warnings, WarningEntry{Message: msg, Count: count})
+func (c *Controller) buildSnapshot(ctx context.Context) (*RolloutSnapshot, error) {
+	// Fetch Deployment
+	deployment, err := c.repo.GetDeployment(ctx, c.deploymentName)
+	if err != nil {
+		return nil, fmt.Errorf("failed to fetch deployment: %w", err)
 	}
-	sort.Slice(warnings, func(i, j int) bool {
-		if warnings[i].Count != warnings[j].Count {
-			return warnings[i].Count > warnings[j].Count
+
+	// Fetch ReplicaSets
+	oldRSs, newRS, err := c.repo.GetReplicaSets(ctx, deployment)
+	if err != nil {
+		return nil, fmt.Errorf("failed to fetch ReplicaSets: %w", err)
+	}
+
+	if newRS == nil {
+		return nil, fmt.Errorf("no new ReplicaSet found for deployment")
+	}
+
+	// Fetch fresh warnings from API (counted within current poll)
+	var warnings []WarningEntry
+	var ignoredWarningsCount int
+
+	warningCounts, err := c.repo.GetPodWarnings(ctx, newRS)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Failed to fetch pod warnings: %v\n", err)
+	} else {
+		// Filter warnings based on ignore pattern
+		for msg, count := range warningCounts {
+			if c.config.IgnoreWarnings != nil && c.config.IgnoreWarnings.MatchString(msg) {
+				ignoredWarningsCount++
+			} else {
+				warnings = append(warnings, WarningEntry{Message: msg, Count: count})
+			}
 		}
-		return warnings[i].Message < warnings[j].Message
-	})
+
+		// Sort warnings by count (descending), then alphabetically
+		sort.Slice(warnings, func(i, j int) bool {
+			if warnings[i].Count != warnings[j].Count {
+				return warnings[i].Count > warnings[j].Count
+			}
+			return warnings[i].Message < warnings[j].Message
+		})
+	}
 
 	// Extract strategy parameters
 	strategy := deployment.Spec.Strategy
@@ -93,17 +127,14 @@ func (c *Controller) buildSnapshot(deployment *appsv1.Deployment, oldRSs []*apps
 	// Calculate pod states
 	desired := getInt32OrDefault(deployment.Spec.Replicas, defaultReplicaCount)
 
-	newRSState := ReplicaSetState{}
-	var startTime time.Time
-	var newRSName string
-
-	if newRS != nil {
-		newRSName = newRS.Name
-		newRSState.Current = newRS.Status.Replicas
-		newRSState.Ready = newRS.Status.ReadyReplicas
-		newRSState.Available = newRS.Status.AvailableReplicas
-		startTime = newRS.CreationTimestamp.Time
+	// newRS is guaranteed to be non-nil at this point
+	newRSName := newRS.Name
+	newRSState := ReplicaSetState{
+		Current:   newRS.Status.Replicas,
+		Ready:     newRS.Status.ReadyReplicas,
+		Available: newRS.Status.AvailableReplicas,
 	}
+	startTime := newRS.CreationTimestamp.Time
 
 	oldRSState := ReplicaSetState{}
 	for _, rs := range oldRSs {
@@ -136,23 +167,24 @@ func (c *Controller) buildSnapshot(deployment *appsv1.Deployment, oldRSs []*apps
 	}
 
 	return &RolloutSnapshot{
-		DeploymentName:      deployment.Name,
-		NewRSName:           newRSName,
-		StrategyType:        string(strategy.Type),
-		MaxSurge:            maxSurge,
-		MaxUnavailable:      maxUnavailable,
-		Desired:             desired,
-		NewRS:               newRSState,
-		OldRS:               oldRSState,
-		NewProgress:         newProgress,
-		OldProgress:         oldProgress,
-		StartTime:           startTime,
-		SnapshotTime:        time.Now(),
-		ProgressUpdateTime:  getProgressUpdateTime(deployment),
-		EstimatedCompletion: estimatedCompletion,
-		Status:              CalculateRolloutStatus(deployment, newRS),
-		Warnings:            warnings,
-	}
+		DeploymentName:       deployment.Name,
+		NewRSName:            newRSName,
+		StrategyType:         string(strategy.Type),
+		MaxSurge:             maxSurge,
+		MaxUnavailable:       maxUnavailable,
+		Desired:              desired,
+		NewRS:                newRSState,
+		OldRS:                oldRSState,
+		NewProgress:          newProgress,
+		OldProgress:          oldProgress,
+		StartTime:            startTime,
+		SnapshotTime:         time.Now(),
+		ProgressUpdateTime:   getProgressUpdateTime(deployment),
+		EstimatedCompletion:  estimatedCompletion,
+		Status:               CalculateRolloutStatus(deployment, newRS),
+		Warnings:             warnings,
+		IgnoredWarningsCount: ignoredWarningsCount,
+	}, nil
 }
 
 // formatIntOrPercent formats Kubernetes IntOrString for display.

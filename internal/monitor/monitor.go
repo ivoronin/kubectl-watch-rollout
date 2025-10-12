@@ -19,8 +19,6 @@ import (
 	"fmt"
 	"os"
 	"time"
-
-	appsv1 "k8s.io/api/apps/v1"
 )
 
 // Controller handles deployment rollout monitoring (Controller layer).
@@ -29,8 +27,6 @@ type Controller struct {
 	repo           *DeploymentRepository
 	view           View
 	deploymentName string
-	warnings       map[string]int // Accumulated warnings for current ReplicaSet
-	currentNewRS   string         // Name of current new ReplicaSet (for reset detection)
 	config         Config
 }
 
@@ -52,7 +48,6 @@ func NewWithConfig(repo *DeploymentRepository, deploymentName string, config Con
 		repo:           repo,
 		view:           NewConsoleView(config, os.Stdout),
 		deploymentName: deploymentName,
-		warnings:       make(map[string]int),
 		config:         config,
 	}, nil
 }
@@ -66,12 +61,11 @@ func (c *Controller) Run(ctx context.Context) error {
 	defer ticker.Stop()
 
 	for {
-		deployment, err := c.repo.GetDeployment(ctx, c.deploymentName)
+		result, err := c.processDeployment(ctx)
 		if err != nil {
-			return fmt.Errorf("failed to fetch deployment status: %w", err)
+			return err
 		}
 
-		result := c.processDeployment(ctx, deployment)
 		if result.Done {
 			// Only exit if --until-complete flag is set
 			if c.config.UntilComplete {
@@ -92,45 +86,19 @@ func (c *Controller) Run(ctx context.Context) error {
 	}
 }
 
-// processDeployment evaluates deployment, accumulates warnings, renders view.
-// Returns rollout result indicating done/failed state.
-func (c *Controller) processDeployment(ctx context.Context, deployment *appsv1.Deployment) RolloutResult {
-	oldRSs, newRS, err := c.repo.GetReplicaSets(ctx, deployment)
+// processDeployment fetches deployment data, builds snapshot, and renders view.
+// Returns rollout result indicating done/failed state, or error if processing fails.
+func (c *Controller) processDeployment(ctx context.Context) (RolloutResult, error) {
+	snapshot, err := c.buildSnapshot(ctx)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error listing ReplicaSets: %v\n", err)
-		return RolloutResult{Done: true, Failed: true}
+		return RolloutResult{}, fmt.Errorf("failed to build snapshot: %w", err)
 	}
 
-	// Reset state when a new ReplicaSet is detected
-	if newRS != nil && newRS.Name != c.currentNewRS {
-		c.currentNewRS = newRS.Name
-		c.warnings = make(map[string]int)
-	}
-
-	c.accumulateWarnings(ctx, newRS)
-
-	snapshot := c.buildSnapshot(deployment, oldRSs, newRS)
 	c.view.RenderSnapshot(snapshot)
 
 	return RolloutResult{
 		Done:   snapshot.Status.IsDone(),
 		Failed: snapshot.Status.IsFailed(),
-	}
+	}, nil
 }
 
-// accumulateWarnings collects and counts warning events from pods
-func (c *Controller) accumulateWarnings(ctx context.Context, newRS *appsv1.ReplicaSet) {
-	if newRS == nil {
-		return
-	}
-
-	warnings, err := c.repo.GetPodWarnings(ctx, newRS)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "Failed to fetch pod warnings: %v\n", err)
-		return
-	}
-
-	for _, warning := range warnings {
-		c.warnings[warning]++
-	}
-}

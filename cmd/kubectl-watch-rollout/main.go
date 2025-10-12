@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"os"
 	"os/signal"
+	"regexp"
 	"strings"
 	"syscall"
 
@@ -59,6 +60,7 @@ func parseDeploymentArg(arg string) (string, error) {
 func main() {
 	configFlags := genericclioptions.NewConfigFlags(true)
 	var untilComplete bool
+	var ignoreWarnings string
 
 	cmd := &cobra.Command{
 		Use:   "kubectl watch-rollout DEPLOYMENT",
@@ -120,6 +122,13 @@ This command monitors your deployment rollout in real-time, showing:
 			cfg := monitor.DefaultConfig()
 			cfg.UntilComplete = untilComplete
 
+			if ignoreWarnings != "" {
+				cfg.IgnoreWarnings, err = regexp.Compile(ignoreWarnings)
+				if err != nil {
+					return fmt.Errorf("failed to parse regular expression: %w", err)
+				}
+			}
+
 			m, err := monitor.NewWithConfig(repo, deploymentName, cfg)
 			if err != nil {
 				return fmt.Errorf("failed to initialize monitoring: %w", err)
@@ -131,6 +140,7 @@ This command monitors your deployment rollout in real-time, showing:
 
 	configFlags.AddFlags(cmd.Flags())
 	cmd.Flags().BoolVar(&untilComplete, "until-complete", false, "Exit after monitoring one rollout to completion (default: continuous monitoring)")
+	cmd.Flags().StringVar(&ignoreWarnings, "ignore-warnings", "", "Ignore warnings matching the specified regular expression")
 
 	if err := cmd.Execute(); err != nil {
 		// Silent exit for progress deadline exceeded

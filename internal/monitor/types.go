@@ -2,6 +2,7 @@ package monitor
 
 import (
 	"errors"
+	"regexp"
 	"time"
 
 	appsv1 "k8s.io/api/apps/v1"
@@ -39,6 +40,7 @@ type Config struct {
 	MaxWarnings         int
 	ProgressBarWidth    int
 	UntilComplete       bool // If true, exit after monitoring one rollout (default: false, continuous monitoring)
+	IgnoreWarnings      *regexp.Regexp
 }
 
 // DefaultConfig returns the default configuration
@@ -48,6 +50,7 @@ func DefaultConfig() Config {
 		MaxWarnings:         DefaultMaxWarnings,
 		ProgressBarWidth:    DefaultProgressBarWidth,
 		UntilComplete:       false, // Default: continuous monitoring
+		IgnoreWarnings:      nil,
 	}
 }
 
@@ -77,7 +80,7 @@ func (s RolloutStatus) IsFailed() bool {
 }
 
 // WarningEntry represents a warning message observed during rollout.
-// Warnings are aggregated across poll cycles for the current ReplicaSet.
+// Count represents occurrences within the current poll cycle (no accumulation across polls).
 type WarningEntry struct {
 	Message string
 	Count   int

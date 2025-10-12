@@ -42,19 +42,13 @@ func (r *Renderer) RenderSnapshot(snapshot *RolloutSnapshot) {
 
 	r.renderProgressBars(snapshot)
 	r.renderLegend(snapshot)
-	r.renderWarnings(snapshot.Warnings)
-	r.renderStatusLine(snapshot.Status)
+	r.renderWarnings(snapshot)
+	r.renderStatusLine(snapshot)
 }
 
 // renderHeader displays the rollout header with strategy information
 func (r *Renderer) renderHeader(snapshot *RolloutSnapshot) {
 	now := snapshot.SnapshotTime.Format(timestampDisplayFormat)
-
-	if snapshot.NewRSName == "" {
-		fmt.Fprintf(r.writer, "  ROLLOUT  %s • waiting for ReplicaSet • %s\n", snapshot.DeploymentName, now)
-		return
-	}
-
 	rsName := snapshot.NewRSName
 
 	switch snapshot.StrategyType {
@@ -70,10 +64,6 @@ func (r *Renderer) renderHeader(snapshot *RolloutSnapshot) {
 
 // renderTiming displays when the rollout started and ETA
 func (r *Renderer) renderTiming(snapshot *RolloutSnapshot) {
-	if snapshot.NewRSName == "" {
-		return
-	}
-
 	age := duration.ShortHumanDuration(snapshot.SnapshotTime.Sub(snapshot.StartTime))
 	timestamp := snapshot.StartTime.Format(timestampDisplayFormat)
 
@@ -162,31 +152,35 @@ func (r *Renderer) renderLegend(snapshot *RolloutSnapshot) {
 }
 
 // renderWarnings prints warning events (max configurable)
-func (r *Renderer) renderWarnings(warnings []WarningEntry) {
-	if len(warnings) == 0 {
+func (r *Renderer) renderWarnings(snapshot *RolloutSnapshot) {
+	if len(snapshot.Warnings) == 0 && snapshot.IgnoredWarningsCount == 0 {
 		return
 	}
 
-	fmt.Fprintln(r.writer, " WARNINGS")
+	fmt.Fprintln(r.writer, " WARNINGS:")
 
-	limit := len(warnings)
+	limit := len(snapshot.Warnings)
 	if limit > r.config.MaxWarnings {
 		limit = r.config.MaxWarnings
 	}
 
 	for i := 0; i < limit; i++ {
-		fmt.Fprintf(r.writer, "  ⚠ %s (%dx)\n", warnings[i].Message, warnings[i].Count)
+		fmt.Fprintf(r.writer, "  ⚠ %s (%dx)\n", snapshot.Warnings[i].Message, snapshot.Warnings[i].Count)
 	}
 
-	if len(warnings) > r.config.MaxWarnings {
-		fmt.Fprintf(r.writer, "    ... %d more warnings not shown\n", len(warnings)-r.config.MaxWarnings)
+	if len(snapshot.Warnings) > r.config.MaxWarnings {
+		fmt.Fprintf(r.writer, "    ... %d more warning(s) not shown\n", len(snapshot.Warnings)-r.config.MaxWarnings)
+	}
+
+	if snapshot.IgnoredWarningsCount > 0 {
+		fmt.Fprintf(r.writer, "    ... %d warning(s) ignored\n", snapshot.IgnoredWarningsCount)
 	}
 }
 
 // renderStatusLine displays the current rollout status
-func (r *Renderer) renderStatusLine(status RolloutStatus) {
+func (r *Renderer) renderStatusLine(snapshot *RolloutSnapshot) {
 	fmt.Fprintln(r.writer)
-	switch status {
+	switch snapshot.Status {
 	case StatusProgressing:
 		fmt.Fprintln(r.writer, " STATUS: → Progressing")
 	case StatusDeadlineWarning:

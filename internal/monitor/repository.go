@@ -118,8 +118,8 @@ func filterActiveReplicaSets(rss []*appsv1.ReplicaSet) []*appsv1.ReplicaSet {
 }
 
 // GetPodWarnings fetches warning events for pods belonging to a specific ReplicaSet.
-// Returns a list of unique warning messages from pod events.
-func (r *DeploymentRepository) GetPodWarnings(ctx context.Context, rs *appsv1.ReplicaSet) ([]string, error) {
+// Returns a map of warning messages to their count in the current poll cycle.
+func (r *DeploymentRepository) GetPodWarnings(ctx context.Context, rs *appsv1.ReplicaSet) (map[string]int, error) {
 	// Use label selector from ReplicaSet to filter pods
 	labelSelector := metav1.FormatLabelSelector(rs.Spec.Selector)
 	pods, err := r.clientset.CoreV1().Pods(r.namespace).List(ctx, metav1.ListOptions{
@@ -146,8 +146,8 @@ func (r *DeploymentRepository) GetPodWarnings(ctx context.Context, rs *appsv1.Re
 		return nil, fmt.Errorf("failed to fetch pod events: %w", err)
 	}
 
-	seenInThisPoll := make(map[string]struct{})
-	var warnings []string
+	// Count warnings in this poll cycle
+	warningCounts := make(map[string]int)
 	for _, event := range eventList.Items {
 		// Check if event is for one of our pods
 		if _, ok := podNames[event.InvolvedObject.Name]; !ok {
@@ -155,15 +155,8 @@ func (r *DeploymentRepository) GetPodWarnings(ctx context.Context, rs *appsv1.Re
 		}
 
 		warningMsg := fmt.Sprintf("%s: %s", event.Reason, event.Message)
-
-		// Deduplicate within this poll cycle
-		if _, seen := seenInThisPoll[warningMsg]; seen {
-			continue
-		}
-		seenInThisPoll[warningMsg] = struct{}{}
-
-		warnings = append(warnings, warningMsg)
+		warningCounts[warningMsg]++
 	}
 
-	return warnings, nil
+	return warningCounts, nil
 }
