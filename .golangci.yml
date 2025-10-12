@@ -27,8 +27,11 @@ linters:
           - gosec
           - errcheck
 
-      # Renderer writes to stdout/stderr - errors not actionable in CLI tool
+      # Renderer and TerminalController write to stdout/stderr - errors not actionable in CLI tool
       - path: internal/monitor/renderer\.go
+        linters:
+          - errcheck
+      - path: internal/monitor/terminal\.go
         linters:
           - errcheck
 

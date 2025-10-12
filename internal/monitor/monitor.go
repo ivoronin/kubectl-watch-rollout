@@ -79,7 +79,6 @@ func (c *Controller) Run(ctx context.Context) error {
 
 		select {
 		case <-ctx.Done():
-			fmt.Println("\n\nMonitoring interrupted by user")
 			return fmt.Errorf("monitoring cancelled")
 		case <-ticker.C:
 		}
@@ -101,4 +100,3 @@ func (c *Controller) processDeployment(ctx context.Context) (RolloutResult, erro
 		Failed: snapshot.Status.IsFailed(),
 	}, nil
 }
-

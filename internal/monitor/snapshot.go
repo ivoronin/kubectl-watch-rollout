@@ -6,7 +6,6 @@ package monitor
 import (
 	"context"
 	"fmt"
-	"os"
 	"sort"
 	"time"
 
@@ -91,25 +90,25 @@ func (c *Controller) buildSnapshot(ctx context.Context) (*RolloutSnapshot, error
 
 	warningCounts, err := c.repo.GetPodWarnings(ctx, newRS)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "Failed to fetch pod warnings: %v\n", err)
-	} else {
-		// Filter warnings based on ignore pattern
-		for msg, count := range warningCounts {
-			if c.config.IgnoreWarnings != nil && c.config.IgnoreWarnings.MatchString(msg) {
-				ignoredWarningsCount++
-			} else {
-				warnings = append(warnings, WarningEntry{Message: msg, Count: count})
-			}
-		}
-
-		// Sort warnings by count (descending), then alphabetically
-		sort.Slice(warnings, func(i, j int) bool {
-			if warnings[i].Count != warnings[j].Count {
-				return warnings[i].Count > warnings[j].Count
-			}
-			return warnings[i].Message < warnings[j].Message
-		})
+		return nil, fmt.Errorf("failed to fetch pod warnings: %w", err)
 	}
+
+	// Filter warnings based on ignore pattern
+	for msg, count := range warningCounts {
+		if c.config.IgnoreWarnings != nil && c.config.IgnoreWarnings.MatchString(msg) {
+			ignoredWarningsCount++
+		} else {
+			warnings = append(warnings, WarningEntry{Message: msg, Count: count})
+		}
+	}
+
+	// Sort warnings by count (descending), then alphabetically
+	sort.Slice(warnings, func(i, j int) bool {
+		if warnings[i].Count != warnings[j].Count {
+			return warnings[i].Count > warnings[j].Count
+		}
+		return warnings[i].Message < warnings[j].Message
+	})
 
 	// Extract strategy parameters
 	strategy := deployment.Spec.Strategy

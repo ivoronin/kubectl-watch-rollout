@@ -6,7 +6,6 @@ package monitor
 import (
 	"context"
 	"fmt"
-	"os"
 	"strconv"
 
 	appsv1 "k8s.io/api/apps/v1"
@@ -84,11 +83,10 @@ func (r *DeploymentRepository) GetReplicaSets(ctx context.Context, deployment *a
 		if revisionStr, ok := rs.Annotations[RevisionAnnotation]; ok {
 			parsedRev, err := strconv.ParseInt(revisionStr, parseIntBase10, parseIntBits64)
 			if err != nil {
-				fmt.Fprintf(os.Stderr, "Warning: failed to parse revision %q for ReplicaSet %s: %v\n",
-					revisionStr, rs.Name, err)
-			} else {
-				revision = parsedRev
+				return nil, nil, fmt.Errorf("failed to parse revision %q for ReplicaSet %s in deployment '%s': %w",
+					revisionStr, rs.Name, deployment.Name, err)
 			}
+			revision = parsedRev
 		}
 
 		if revision > maxRevision {

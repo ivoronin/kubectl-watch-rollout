@@ -2,6 +2,7 @@ package monitor
 
 import (
 	"fmt"
+	"io"
 	"os"
 
 	"golang.org/x/term"
@@ -20,54 +21,67 @@ const (
 // TerminalController handles terminal-specific operations via ANSI escape sequences.
 // Auto-detects TTY and only emits control sequences when appropriate.
 type TerminalController struct {
-	isTTY bool
+	writer io.Writer
+	isTTY  bool
 }
 
-// NewTerminalController creates a new terminal controller
-func NewTerminalController() *TerminalController {
+// NewTerminalController creates a new terminal controller with the specified writer.
+// If writer is nil, defaults to os.Stdout.
+func NewTerminalController(writer io.Writer) *TerminalController {
+	if writer == nil {
+		writer = os.Stdout
+	}
+
+	// Detect if writer is a TTY (only works for *os.File)
+	isTTY := false
+	if f, ok := writer.(*os.File); ok {
+		isTTY = term.IsTerminal(int(f.Fd()))
+	}
+
 	return &TerminalController{
-		isTTY: term.IsTerminal(int(os.Stdout.Fd())),
+		writer: writer,
+		isTTY:  isTTY,
 	}
 }
 
 // ClearScreen clears the terminal screen
 func (t *TerminalController) ClearScreen() {
 	if t.isTTY {
-		fmt.Print(ansiClearScreen)
+		fmt.Fprint(t.writer, ansiClearScreen)
 	}
 }
 
 // SetProgress sets the terminal progress indicator
 func (t *TerminalController) SetProgress(percent int) {
 	if t.isTTY {
-		fmt.Printf(ansiProgressFormat, percent)
+		fmt.Fprintf(t.writer, ansiProgressFormat, percent)
 	}
 }
 
 // ClearProgress clears the terminal progress indicator
 func (t *TerminalController) ClearProgress() {
 	if t.isTTY {
-		fmt.Print(ansiClearProgress)
+		fmt.Fprint(t.writer, ansiClearProgress)
 	}
 }
 
 // SetErrorState sets the terminal to error state
 func (t *TerminalController) SetErrorState() {
 	if t.isTTY {
-		fmt.Print(ansiErrorState)
+		fmt.Fprint(t.writer, ansiErrorState)
 	}
 }
 
 // HideCursor hides the terminal cursor
 func (t *TerminalController) HideCursor() {
 	if t.isTTY {
-		fmt.Print(ansiHideCursor)
+		fmt.Fprint(t.writer, ansiHideCursor)
 	}
 }
 
 // ShowCursor shows the terminal cursor
 func (t *TerminalController) ShowCursor() {
 	if t.isTTY {
-		fmt.Print(ansiShowCursor)
+		fmt.Fprint(t.writer, ansiShowCursor)
 	}
 }
