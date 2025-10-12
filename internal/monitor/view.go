@@ -23,9 +23,12 @@ type ConsoleView struct {
 
 // NewConsoleView creates a new console view
 func NewConsoleView(config Config, writer io.Writer) *ConsoleView {
+	terminal := NewTerminalController()
+	terminal.HideCursor()
+
 	return &ConsoleView{
 		renderer: NewRenderer(config, writer),
-		terminal: NewTerminalController(),
+		terminal: terminal,
 	}
 }
 

@@ -10,6 +10,7 @@ import (
 const (
 	// ANSI escape sequences for terminal control
 	ansiClearScreen    = "\033[H\033[2J"      // Move cursor to home + clear screen
+	ansiHideCursor     = "\033[?25l"          // Hide cursor
 	ansiShowCursor     = "\033[?25h"          // Show cursor (restore visibility)
 	ansiProgressFormat = "\033]9;4;1;%d\007"  // Windows Terminal progress: state=1 (normal), percent=%d
 	ansiClearProgress  = "\033]9;4;0;\007"    // Windows Terminal progress: state=0 (clear)
@@ -54,6 +55,13 @@ func (t *TerminalController) ClearProgress() {
 func (t *TerminalController) SetErrorState() {
 	if t.isTTY {
 		fmt.Print(ansiErrorState)
+	}
+}
+
+// HideCursor hides the terminal cursor
+func (t *TerminalController) HideCursor() {
+	if t.isTTY {
+		fmt.Print(ansiHideCursor)
 	}
 }
 
