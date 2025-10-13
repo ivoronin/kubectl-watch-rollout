@@ -87,7 +87,7 @@ Use `--line-mode` flag for timestamped, single-line output suitable for log aggr
 kubectl watch-rollout my-deployment -n production --line-mode --until-complete
 
 # Example output:
-# 2025-10-12T14:20:00.123Z replicaset:api-7d8f9c status:progressing new:0/10 old:10/10 eta:unknown
+# 2025-10-12T14:20:00.123Z replicaset:api-7d8f9c status:progressing new:0/10 old:10/10 eta:-
 # 2025-10-12T14:20:05.456Z replicaset:api-7d8f9c status:progressing new:2/10 old:10/10 eta:4m25s
 #     WARNING: BackOff: Back-off restarting failed container (2x)
 # 2025-10-12T14:24:00.789Z replicaset:api-7d8f9c status:complete new:10/10 old:0/0 duration:4m0s

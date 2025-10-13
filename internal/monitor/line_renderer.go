@@ -93,7 +93,7 @@ func (r *LineRenderer) formatMetadata(snapshot *RolloutSnapshot) string {
 	}
 
 	// No ETA available
-	return "eta:unknown"
+	return "eta:-"
 }
 
 // formatWarnings formats warning lines with 4-space indentation

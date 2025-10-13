@@ -150,16 +150,34 @@ func (c *Controller) buildSnapshot(ctx context.Context) (*RolloutSnapshot, error
 		newProgress = float64(newRSState.Available) / float64(desired)
 		oldProgress = float64(oldRSState.Available) / float64(desired)
 
+		// Track velocity: update timestamp only when Available count actually changes
+		currentAvailable := newRSState.Available
+
+		// Reset velocity tracking if new rollout started (Available count decreased)
+		if currentAvailable < c.lastAvailableCount {
+			c.lastAvailableCount = 0
+			c.lastAvailableTime = time.Time{}
+		}
+
+		// Update velocity when Available count increases
+		if currentAvailable != c.lastAvailableCount {
+			c.lastAvailableCount = currentAvailable
+			c.lastAvailableTime = time.Now()
+		}
+
 		// Calculate ETA if progress is meaningful but not complete
 		if newProgress >= MinProgressForETA && newProgress < 1.0 {
-			elapsed := time.Since(startTime)
-			totalEstimated := time.Duration(float64(elapsed) / newProgress)
+			// Use lastAvailableTime for stable ETA - only changes when Available count changes
+			if !c.lastAvailableTime.IsZero() {
+				elapsed := c.lastAvailableTime.Sub(startTime)
+				totalEstimated := time.Duration(float64(elapsed) / newProgress)
 
-			// Only set ETA if realistic (less than MaxRealisticETAHours)
-			if totalEstimated < MaxRealisticETAHours*time.Hour {
-				eta := startTime.Add(totalEstimated)
-				if time.Until(eta) > 0 {
-					estimatedCompletion = &eta
+				// Only set ETA if realistic (less than MaxRealisticETAHours)
+				if totalEstimated < MaxRealisticETAHours*time.Hour {
+					eta := startTime.Add(totalEstimated)
+					if time.Until(eta) > 0 {
+						estimatedCompletion = &eta
+					}
 				}
 			}
 		}
