@@ -34,6 +34,9 @@ linters:
       - path: internal/monitor/terminal\.go
         linters:
           - errcheck
+      - path: internal/monitor/line_renderer\.go
+        linters:
+          - errcheck
 
   settings:
     errcheck:

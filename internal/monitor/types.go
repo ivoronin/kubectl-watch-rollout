@@ -40,6 +40,7 @@ type Config struct {
 	MaxWarnings         int
 	ProgressBarWidth    int
 	UntilComplete       bool // If true, exit after monitoring one rollout (default: false, continuous monitoring)
+	LineMode            bool // If true, use line-based output format (default: false, interactive mode)
 	IgnoreWarnings      *regexp.Regexp
 }
 
@@ -50,6 +51,7 @@ func DefaultConfig() Config {
 		MaxWarnings:         DefaultMaxWarnings,
 		ProgressBarWidth:    DefaultProgressBarWidth,
 		UntilComplete:       false, // Default: continuous monitoring
+		LineMode:            false, // Default: interactive mode
 		IgnoreWarnings:      nil,
 	}
 }

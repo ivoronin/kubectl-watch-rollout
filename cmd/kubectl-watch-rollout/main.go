@@ -60,6 +60,7 @@ func parseDeploymentArg(arg string) (string, error) {
 func main() {
 	configFlags := genericclioptions.NewConfigFlags(true)
 	var untilComplete bool
+	var lineMode bool
 	var ignoreWarnings string
 
 	cmd := &cobra.Command{
@@ -121,6 +122,7 @@ This command monitors your deployment rollout in real-time, showing:
 			// Create monitor with configuration
 			cfg := monitor.DefaultConfig()
 			cfg.UntilComplete = untilComplete
+			cfg.LineMode = lineMode
 
 			if ignoreWarnings != "" {
 				cfg.IgnoreWarnings, err = regexp.Compile(ignoreWarnings)
@@ -140,6 +142,7 @@ This command monitors your deployment rollout in real-time, showing:
 
 	configFlags.AddFlags(cmd.Flags())
 	cmd.Flags().BoolVar(&untilComplete, "until-complete", false, "Exit after monitoring one rollout to completion (default: continuous monitoring)")
+	cmd.Flags().BoolVar(&lineMode, "line-mode", false, "Use line-based output format suitable for log aggregation (default: interactive mode)")
 	cmd.Flags().StringVar(&ignoreWarnings, "ignore-warnings", "", "Ignore warnings matching the specified regular expression")
 
 	if err := cmd.Execute(); err != nil {

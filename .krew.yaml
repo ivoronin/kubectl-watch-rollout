@@ -80,4 +80,5 @@ spec:
     Features include real-time progress bars for new and old ReplicaSets, pod
     status counts (Available, Ready, Current), warning events from pods with
     aggregation and filtering, estimated time to completion, progress deadline
-    tracking, automatic detection of rollout success or failure.
+    tracking, automatic detection of rollout success or failure, line mode for
+    CI/CD pipelines and log aggregation.

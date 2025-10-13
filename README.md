@@ -22,6 +22,7 @@ Watch Kubernetes deployment rollouts with live progress updates and status track
 - **Automatic detection** of rollout success or failure
 - **Automatic rollout detection** - detects and monitors new rollouts as they occur
 - **Single-rollout mode** - use `--until-complete` flag to exit after one rollout (for CI/CD automation)
+- **Line mode** - use `--line-mode` flag for timestamped, parseable output perfect for CI/CD pipelines and log aggregation
 
 ## Installation
 
@@ -76,6 +77,27 @@ kubectl watch-rollout my-deployment -n production --until-complete
 - CI/CD pipelines
 - Automation scripts
 - One-time rollout verification
+
+### Line mode (for CI/CD and log aggregation)
+
+Use `--line-mode` flag for timestamped, single-line output suitable for log aggregation systems and CI/CD pipelines.
+
+```bash
+# Line mode with timestamped output
+kubectl watch-rollout my-deployment -n production --line-mode --until-complete
+
+# Example output:
+# 2025-10-12T14:20:00.123Z replicaset:api-7d8f9c status:progressing new:0/10 old:10/10 eta:unknown
+# 2025-10-12T14:20:05.456Z replicaset:api-7d8f9c status:progressing new:2/10 old:10/10 eta:4m25s
+#     WARNING: BackOff: Back-off restarting failed container (2x)
+# 2025-10-12T14:24:00.789Z replicaset:api-7d8f9c status:complete new:10/10 old:0/0 duration:4m0s
+```
+
+**Perfect for:**
+- CI/CD pipelines with log aggregation (CloudWatch, Splunk, Elasticsearch)
+- Automated deployment monitoring
+- Grep/awk/jq parsing
+- Audit trails and post-mortems
 
 ### Using kubeconfig context
 

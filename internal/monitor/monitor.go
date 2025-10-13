@@ -44,9 +44,17 @@ func NewWithConfig(repo *DeploymentRepository, deploymentName string, config Con
 		return nil, fmt.Errorf("deployment name is required")
 	}
 
+	// Select view based on configuration
+	var view View
+	if config.LineMode {
+		view = NewLineView(config, os.Stdout)
+	} else {
+		view = NewConsoleView(config, os.Stdout)
+	}
+
 	return &Controller{
 		repo:           repo,
-		view:           NewConsoleView(config, os.Stdout),
+		view:           view,
 		deploymentName: deploymentName,
 		config:         config,
 	}, nil
