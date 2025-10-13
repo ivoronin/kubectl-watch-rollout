@@ -9,8 +9,6 @@ import (
 	"sort"
 	"strings"
 	"time"
-
-	"k8s.io/apimachinery/pkg/util/duration"
 )
 
 // LineRenderer renders rollout status as single-line timestamped output
@@ -83,13 +81,13 @@ func (r *LineRenderer) formatMetadata(snapshot *RolloutSnapshot) string {
 	// Show actual completion duration if rollout is done and we have ProgressUpdateTime
 	if snapshot.Status.IsDone() {
 		elapsed := snapshot.ProgressUpdateTime.Sub(snapshot.StartTime)
-		return fmt.Sprintf("duration:%s", duration.ShortHumanDuration(elapsed))
+		return fmt.Sprintf("duration:%s", FormatDuration(elapsed))
 	}
 
 	// Show ETA if available
 	if snapshot.EstimatedCompletion != nil {
 		remaining := time.Until(*snapshot.EstimatedCompletion)
-		return fmt.Sprintf("eta:%s", duration.ShortHumanDuration(remaining))
+		return fmt.Sprintf("eta:%s", FormatDuration(remaining))
 	}
 
 	// No ETA available

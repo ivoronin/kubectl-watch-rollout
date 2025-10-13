@@ -6,8 +6,6 @@ import (
 	"os"
 	"text/tabwriter"
 	"time"
-
-	"k8s.io/apimachinery/pkg/util/duration"
 )
 
 const (
@@ -64,7 +62,7 @@ func (r *Renderer) renderHeader(snapshot *RolloutSnapshot) {
 
 // renderTiming displays when the rollout started and ETA
 func (r *Renderer) renderTiming(snapshot *RolloutSnapshot) {
-	age := duration.ShortHumanDuration(snapshot.SnapshotTime.Sub(snapshot.StartTime))
+	age := FormatDuration(snapshot.SnapshotTime.Sub(snapshot.StartTime))
 	timestamp := snapshot.StartTime.Format(timestampDisplayFormat)
 
 	fmt.Fprintln(r.writer)
@@ -74,11 +72,11 @@ func (r *Renderer) renderTiming(snapshot *RolloutSnapshot) {
 	if snapshot.Status.IsDone() && snapshot.ProgressUpdateTime != nil {
 		finishTimestamp := snapshot.ProgressUpdateTime.Format(timestampDisplayFormat)
 		elapsed := snapshot.ProgressUpdateTime.Sub(snapshot.StartTime)
-		elapsedStr := duration.ShortHumanDuration(elapsed)
+		elapsedStr := FormatDuration(elapsed)
 		fmt.Fprintf(r.writer, " ⚑ FINISHED: %s (%s elapsed)\n", finishTimestamp, elapsedStr)
 	} else if snapshot.EstimatedCompletion != nil {
 		etaStr := snapshot.EstimatedCompletion.Format(timestampDisplayFormat)
-		remainingStr := duration.ShortHumanDuration(time.Until(*snapshot.EstimatedCompletion))
+		remainingStr := FormatDuration(time.Until(*snapshot.EstimatedCompletion))
 		fmt.Fprintf(r.writer, " ⚑ ETA:     %s (%s to go)\n", etaStr, remainingStr)
 	} else {
 		fmt.Fprintf(r.writer, " ⚑ ETA:     Calculating...\n")
