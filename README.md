@@ -18,7 +18,7 @@ Watch Kubernetes deployment rollouts with live progress updates and status track
 - **Pod status counts** with detailed breakdown of Available, Ready, and Current pods
 - **Warning events** from pods with automatic aggregation and deduplication
 - **Estimated time to completion** based on current rollout velocity
-- **Progress deadline tracking** with warnings when approaching timeout
+- **Progress deadline detection** for failed rollouts
 - **Automatic detection** of rollout success or failure
 - **Automatic rollout detection** - detects and monitors new rollouts as they occur
 - **Single-rollout mode** - use `--until-complete` flag to exit after one rollout (for CI/CD automation)

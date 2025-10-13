@@ -61,8 +61,6 @@ func (r *LineRenderer) formatStatus(status RolloutStatus) string {
 	switch status {
 	case StatusProgressing:
 		return "progressing"
-	case StatusDeadlineWarning:
-		return "deadline-warning"
 	case StatusDeadlineExceeded:
 		return "deadline-exceeded"
 	case StatusComplete:

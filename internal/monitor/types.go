@@ -3,7 +3,6 @@ package monitor
 import (
 	"errors"
 	"regexp"
-	"time"
 
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -19,8 +18,6 @@ const (
 	DefaultMaxWarnings = 10
 	// DefaultProgressBarWidth fits standard 80-column terminals with margin
 	DefaultProgressBarWidth = 70
-	// DefaultDeadlineWarningThreshold warns when less than 25% time remaining
-	DefaultDeadlineWarningThreshold = 0.25
 	// DefaultProgressDeadlineSeconds is the K8s default progress deadline
 	DefaultProgressDeadlineSeconds = 600
 	// DefaultMaxSurge is the K8s default for RollingUpdate strategy
@@ -63,8 +60,6 @@ type RolloutStatus int
 const (
 	// StatusProgressing indicates rollout is in progress
 	StatusProgressing RolloutStatus = iota
-	// StatusDeadlineWarning indicates rollout is approaching deadline
-	StatusDeadlineWarning
 	// StatusDeadlineExceeded indicates rollout failed due to deadline
 	StatusDeadlineExceeded
 	// StatusComplete indicates rollout completed successfully
@@ -106,8 +101,8 @@ func isDeploymentFailed(status appsv1.DeploymentStatus) bool {
 	return hasCondition(status, appsv1.DeploymentProgressing, corev1.ConditionFalse, ProgressDeadlineExceeded)
 }
 
-// CalculateRolloutStatus determines rollout status from deployment conditions and timing.
-// Returns Complete if fully available, DeadlineExceeded if failed, DeadlineWarning if <25% time remains.
+// CalculateRolloutStatus determines rollout status from deployment conditions.
+// Returns Complete if fully available, DeadlineExceeded if failed, otherwise Progressing.
 func CalculateRolloutStatus(deployment *appsv1.Deployment, newRS *appsv1.ReplicaSet) RolloutStatus {
 	status := deployment.Status
 
@@ -119,34 +114,7 @@ func CalculateRolloutStatus(deployment *appsv1.Deployment, newRS *appsv1.Replica
 		return StatusDeadlineExceeded
 	}
 
-	if isApproachingDeadline(deployment) {
-		return StatusDeadlineWarning
-	}
-
 	return StatusProgressing
-}
-
-// isApproachingDeadline checks if deployment is close to exceeding its progress deadline.
-// Uses Progressing condition's LastUpdateTime - this resets whenever progress is made,
-// which matches Kubernetes' progress deadline behavior.
-func isApproachingDeadline(deployment *appsv1.Deployment) bool {
-	progressTime := getProgressUpdateTime(deployment)
-	if progressTime == nil {
-		return false
-	}
-
-	deadline := getInt32OrDefault(deployment.Spec.ProgressDeadlineSeconds, DefaultProgressDeadlineSeconds)
-	elapsed := time.Since(*progressTime)
-	threshold := calculateDeadlineWarningThreshold(deadline)
-
-	return elapsed > threshold
-}
-
-// calculateDeadlineWarningThreshold computes when to show deadline warning.
-// Warns when more than 75% of deadline has elapsed (less than 25% remaining).
-func calculateDeadlineWarningThreshold(deadlineSeconds int32) time.Duration {
-	secondsUntilWarning := float64(deadlineSeconds) * (1.0 - DefaultDeadlineWarningThreshold)
-	return time.Duration(secondsUntilWarning) * time.Second
 }
 
 // hasCondition checks if a specific condition exists with given type and status.

@@ -183,8 +183,6 @@ func (r *Renderer) renderStatusLine(snapshot *RolloutSnapshot) {
 	switch snapshot.Status {
 	case StatusProgressing:
 		fmt.Fprintln(r.writer, " STATUS: → Progressing")
-	case StatusDeadlineWarning:
-		fmt.Fprintln(r.writer, " STATUS: ⚠ Approaching Deadline")
 	case StatusDeadlineExceeded:
 		fmt.Fprintln(r.writer, " STATUS: ✗ Deadline Exceeded")
 	case StatusComplete:
