@@ -90,7 +90,7 @@ func (r *Renderer) renderProgressBars(snapshot *RolloutSnapshot) {
 	}
 
 	newBar := buildNewBar(r.config.ProgressBarWidth, snapshot.Desired, snapshot.NewRS.Current, snapshot.NewRS.Ready, snapshot.NewRS.Available)
-	oldBar := buildOldBar(r.config.ProgressBarWidth, snapshot.Desired, snapshot.OldRS.Current)
+	oldBar := buildOldBar(r.config.ProgressBarWidth, snapshot.Desired, snapshot.OldRS.Available)
 
 	fmt.Fprintf(r.writer, " NEW %s %3.0f%%\n", newBar, snapshot.NewProgress*100)
 	fmt.Fprintf(r.writer, " OLD %s %3.0f%%\n", oldBar, snapshot.OldProgress*100)
@@ -118,14 +118,14 @@ func buildNewBar(width int, desired, current, ready, available int32) string {
 	return string(bar)
 }
 
-// buildOldBar creates the OLD progress bar
-func buildOldBar(width int, desired, current int32) string {
+// buildOldBar creates the OLD progress bar based on available pods
+func buildOldBar(width int, desired, available int32) string {
 	bar := make([]rune, width)
 	for i := range bar {
 		bar[i] = '·'
 	}
 
-	w := int(float64(current) / float64(desired) * float64(width))
+	w := int(float64(available) / float64(desired) * float64(width))
 	for i := 0; i < w && i < width; i++ {
 		bar[i] = '◼'
 	}
