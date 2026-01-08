@@ -40,7 +40,7 @@ func (r *Renderer) RenderSnapshot(snapshot *RolloutSnapshot) {
 
 	r.renderProgressBars(snapshot)
 	r.renderLegend(snapshot)
-	r.renderWarnings(snapshot)
+	r.renderEvents(snapshot)
 	r.renderStatusLine(snapshot)
 }
 
@@ -149,29 +149,42 @@ func (r *Renderer) renderLegend(snapshot *RolloutSnapshot) {
 	fmt.Fprintln(r.writer)
 }
 
-// renderWarnings prints warning events (max configurable)
-func (r *Renderer) renderWarnings(snapshot *RolloutSnapshot) {
-	if len(snapshot.Warnings) == 0 && snapshot.IgnoredWarningsCount == 0 {
+// renderEvents prints events with console-specific styling.
+// Truncates to config.MaxEvents for TTY display.
+func (r *Renderer) renderEvents(snapshot *RolloutSnapshot) {
+	report := snapshot.Events
+
+	if len(report.Clusters) == 0 && report.IgnoredCount == 0 {
 		return
 	}
 
-	fmt.Fprintln(r.writer, " WARNINGS:")
+	fmt.Fprintln(r.writer, " EVENTS:")
 
-	limit := len(snapshot.Warnings)
-	if limit > r.config.MaxWarnings {
-		limit = r.config.MaxWarnings
+	// Truncate to maxEvents for TTY display
+	clusters := report.Clusters
+	hiddenCount := 0
+	if r.config.MaxEvents > 0 && len(clusters) > r.config.MaxEvents {
+		hiddenCount = len(clusters) - r.config.MaxEvents
+		clusters = clusters[:r.config.MaxEvents]
 	}
 
-	for i := 0; i < limit; i++ {
-		fmt.Fprintf(r.writer, "  ⚠ %s (%dx)\n", snapshot.Warnings[i].Message, snapshot.Warnings[i].Count)
+	for _, c := range clusters {
+		age := FormatDuration(time.Since(c.LastSeen)) + " ago"
+		if c.LookAlikeCount > 0 {
+			fmt.Fprintf(r.writer, "   %s %s: %s (+%d look-alike, last %s)\n", c.Symbol(), c.Reason, c.Message, c.LookAlikeCount, age)
+		} else {
+			fmt.Fprintf(r.writer, "   %s %s: %s (last %s)\n", c.Symbol(), c.Reason, c.Message, age)
+		}
 	}
 
-	if len(snapshot.Warnings) > r.config.MaxWarnings {
-		fmt.Fprintf(r.writer, "    ... %d more warning(s) not shown\n", len(snapshot.Warnings)-r.config.MaxWarnings)
+	// Show truncation notice if events were hidden
+	if hiddenCount > 0 {
+		fmt.Fprintf(r.writer, "   ... %d more event(s) not shown\n", hiddenCount)
 	}
 
-	if snapshot.IgnoredWarningsCount > 0 {
-		fmt.Fprintf(r.writer, "    ... %d warning(s) ignored\n", snapshot.IgnoredWarningsCount)
+	// Show ignored events count if any
+	if report.IgnoredCount > 0 {
+		fmt.Fprintf(r.writer, "   ... %d event(s) ignored\n", report.IgnoredCount)
 	}
 }
 

@@ -28,10 +28,6 @@ type Controller struct {
 	view           View
 	deploymentName string
 	config         Config
-
-	// Velocity tracking for stable ETA calculation
-	lastAvailableCount int32
-	lastAvailableTime  time.Time
 }
 
 // New creates a new Controller instance for monitoring a deployment rollout

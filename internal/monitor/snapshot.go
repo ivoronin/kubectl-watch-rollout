@@ -6,7 +6,6 @@ package monitor
 import (
 	"context"
 	"fmt"
-	"sort"
 	"time"
 
 	appsv1 "k8s.io/api/apps/v1"
@@ -48,11 +47,9 @@ type RolloutSnapshot struct {
 	ProgressUpdateTime  *time.Time // lastUpdateTime from Progressing condition
 	EstimatedCompletion *time.Time // renamed from ETA for clarity
 
-	// Status and warnings
-	Status   RolloutStatus
-	Warnings []WarningEntry
-
-	IgnoredWarningsCount int
+	// Status and events
+	Status RolloutStatus
+	Events EventSummary
 }
 
 // getProgressUpdateTime extracts LastUpdateTime from Progressing condition.
@@ -84,31 +81,12 @@ func (c *Controller) buildSnapshot(ctx context.Context) (*RolloutSnapshot, error
 		return nil, fmt.Errorf("no new ReplicaSet found for deployment")
 	}
 
-	// Fetch fresh warnings from API (counted within current poll)
-	var warnings []WarningEntry
-	var ignoredWarningsCount int
-
-	warningCounts, err := c.repo.GetPodWarnings(ctx, newRS)
+	// Fetch and process events (filtering, clustering, formatting all in one)
+	rawEvents, err := c.repo.GetPodEvents(ctx, newRS)
 	if err != nil {
-		return nil, fmt.Errorf("failed to fetch pod warnings: %w", err)
+		return nil, fmt.Errorf("failed to fetch pod events: %w", err)
 	}
-
-	// Filter warnings based on ignore pattern
-	for msg, count := range warningCounts {
-		if c.config.IgnoreWarnings != nil && c.config.IgnoreWarnings.MatchString(msg) {
-			ignoredWarningsCount++
-		} else {
-			warnings = append(warnings, WarningEntry{Message: msg, Count: count})
-		}
-	}
-
-	// Sort warnings by count (descending), then alphabetically
-	sort.Slice(warnings, func(i, j int) bool {
-		if warnings[i].Count != warnings[j].Count {
-			return warnings[i].Count > warnings[j].Count
-		}
-		return warnings[i].Message < warnings[j].Message
-	})
+	events := SummarizeEvents(rawEvents, c.config.IgnoreEvents, c.config.SimilarityThreshold)
 
 	// Extract strategy parameters
 	strategy := deployment.Spec.Strategy
@@ -145,31 +123,17 @@ func (c *Controller) buildSnapshot(ctx context.Context) (*RolloutSnapshot, error
 	// Calculate progress ratios
 	var newProgress, oldProgress float64
 	var estimatedCompletion *time.Time
+	progressUpdateTime := getProgressUpdateTime(deployment)
 
 	if desired > 0 {
 		newProgress = float64(newRSState.Available) / float64(desired)
 		oldProgress = float64(oldRSState.Available) / float64(desired)
 
-		// Track velocity: update timestamp only when Available count actually changes
-		currentAvailable := newRSState.Available
-
-		// Reset velocity tracking if new rollout started (Available count decreased)
-		if currentAvailable < c.lastAvailableCount {
-			c.lastAvailableCount = 0
-			c.lastAvailableTime = time.Time{}
-		}
-
-		// Update velocity when Available count increases
-		if currentAvailable != c.lastAvailableCount {
-			c.lastAvailableCount = currentAvailable
-			c.lastAvailableTime = time.Now()
-		}
-
-		// Calculate ETA if progress is meaningful but not complete
-		if newProgress >= MinProgressForETA && newProgress < 1.0 {
-			// Use lastAvailableTime for stable ETA - only changes when Available count changes
-			if !c.lastAvailableTime.IsZero() {
-				elapsed := c.lastAvailableTime.Sub(startTime)
+		// Calculate ETA using server timestamps (avoids clock skew issues)
+		// startTime and progressUpdateTime are both from K8s server
+		if newProgress >= MinProgressForETA && newProgress < 1.0 && progressUpdateTime != nil {
+			elapsed := progressUpdateTime.Sub(startTime)
+			if elapsed > 0 {
 				totalEstimated := time.Duration(float64(elapsed) / newProgress)
 
 				// Only set ETA if realistic (less than MaxRealisticETAHours)
@@ -184,23 +148,22 @@ func (c *Controller) buildSnapshot(ctx context.Context) (*RolloutSnapshot, error
 	}
 
 	return &RolloutSnapshot{
-		DeploymentName:       deployment.Name,
-		NewRSName:            newRSName,
-		StrategyType:         string(strategy.Type),
-		MaxSurge:             maxSurge,
-		MaxUnavailable:       maxUnavailable,
-		Desired:              desired,
-		NewRS:                newRSState,
-		OldRS:                oldRSState,
-		NewProgress:          newProgress,
-		OldProgress:          oldProgress,
-		StartTime:            startTime,
-		SnapshotTime:         time.Now(),
-		ProgressUpdateTime:   getProgressUpdateTime(deployment),
-		EstimatedCompletion:  estimatedCompletion,
-		Status:               CalculateRolloutStatus(deployment, newRS),
-		Warnings:             warnings,
-		IgnoredWarningsCount: ignoredWarningsCount,
+		DeploymentName:      deployment.Name,
+		NewRSName:           newRSName,
+		StrategyType:        string(strategy.Type),
+		MaxSurge:            maxSurge,
+		MaxUnavailable:      maxUnavailable,
+		Desired:             desired,
+		NewRS:               newRSState,
+		OldRS:               oldRSState,
+		NewProgress:         newProgress,
+		OldProgress:         oldProgress,
+		StartTime:           startTime,
+		SnapshotTime:        time.Now(),
+		ProgressUpdateTime:  getProgressUpdateTime(deployment),
+		EstimatedCompletion: estimatedCompletion,
+		Status:              CalculateRolloutStatus(deployment, newRS),
+		Events:              events,
 	}, nil
 }
 

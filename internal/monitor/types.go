@@ -3,6 +3,7 @@ package monitor
 import (
 	"errors"
 	"regexp"
+	"time"
 
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -14,8 +15,12 @@ var ErrProgressDeadlineExceeded = errors.New("progress deadline exceeded")
 const (
 	// DefaultPollIntervalSeconds is chosen to balance responsiveness with API load
 	DefaultPollIntervalSeconds = 5
-	// DefaultMaxWarnings limits output while showing most common issues
-	DefaultMaxWarnings = 10
+	// DefaultMaxEvents limits output while showing most common issues
+	DefaultMaxEvents = 10
+	// DefaultSimilarityThreshold controls event clustering aggressiveness (0.0-1.0)
+	// Higher values = less aggressive clustering (only near-identical messages grouped)
+	// 0.85 keeps "Liveness" and "Readiness" probe failures separate
+	DefaultSimilarityThreshold = 0.85
 	// DefaultProgressBarWidth fits standard 80-column terminals with margin
 	DefaultProgressBarWidth = 70
 	// DefaultProgressDeadlineSeconds is the K8s default progress deadline
@@ -34,22 +39,24 @@ const (
 // Use DefaultConfig() to obtain sensible defaults, then override as needed.
 type Config struct {
 	PollIntervalSeconds int
-	MaxWarnings         int
+	MaxEvents           int
 	ProgressBarWidth    int
-	UntilComplete       bool // If true, exit after monitoring one rollout (default: false, continuous monitoring)
-	LineMode            bool // If true, use line-based output format (default: false, interactive mode)
-	IgnoreWarnings      *regexp.Regexp
+	SimilarityThreshold float64        // Controls event clustering (0.0-1.0, lower = more aggressive)
+	UntilComplete       bool           // If true, exit after monitoring one rollout (default: false, continuous monitoring)
+	LineMode            bool           // If true, use line-based output format (default: false, interactive mode)
+	IgnoreEvents        *regexp.Regexp // Regex to filter out events by "Reason: Message"
 }
 
 // DefaultConfig returns the default configuration
 func DefaultConfig() Config {
 	return Config{
 		PollIntervalSeconds: DefaultPollIntervalSeconds,
-		MaxWarnings:         DefaultMaxWarnings,
+		MaxEvents:           DefaultMaxEvents,
 		ProgressBarWidth:    DefaultProgressBarWidth,
+		SimilarityThreshold: DefaultSimilarityThreshold,
 		UntilComplete:       false, // Default: continuous monitoring
 		LineMode:            false, // Default: interactive mode
-		IgnoreWarnings:      nil,
+		IgnoreEvents:        nil,
 	}
 }
 
@@ -76,11 +83,29 @@ func (s RolloutStatus) IsFailed() bool {
 	return s == StatusDeadlineExceeded
 }
 
-// WarningEntry represents a warning message observed during rollout.
-// Count represents occurrences within the current poll cycle (no accumulation across polls).
-type WarningEntry struct {
-	Message string
-	Count   int
+// EventCluster represents similar K8s events grouped together for display.
+// Used by both console and line renderers.
+type EventCluster struct {
+	Type           string    // K8s event type: "Warning" or "Normal"
+	Reason         string    // K8s event reason (e.g., "FailedScheduling", "Unhealthy")
+	Message        string    // Truncated representative message
+	LookAlikeCount int       // Additional similar events (0 = standalone)
+	LastSeen       time.Time // Most recent occurrence in cluster
+}
+
+// Symbol returns a visual symbol for display based on event Type.
+func (e EventCluster) Symbol() string {
+	if e.Type == corev1.EventTypeWarning {
+		return "⚠"
+	}
+	return "ℹ"
+}
+
+// EventSummary is the result of event processing, ready for rendering.
+// Contains clustered events plus metadata about filtering.
+type EventSummary struct {
+	Clusters     []EventCluster // Event clusters ready for display
+	IgnoredCount int            // Events filtered by ignore regex
 }
 
 // RolloutResult represents the outcome of a monitoring iteration.

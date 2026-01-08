@@ -4,6 +4,7 @@ go 1.24.3
 
 require (
 	github.com/spf13/cobra v1.10.1
+	github.com/xrash/smetrics v0.0.0-20250705151800-55b8f293f342
 	golang.org/x/term v0.35.0
 	k8s.io/api v0.34.1
 	k8s.io/apimachinery v0.34.1

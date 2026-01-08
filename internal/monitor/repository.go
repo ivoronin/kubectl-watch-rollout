@@ -9,6 +9,7 @@ import (
 	"strconv"
 
 	appsv1 "k8s.io/api/apps/v1"
+	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
 )
@@ -115,9 +116,9 @@ func filterActiveReplicaSets(rss []*appsv1.ReplicaSet) []*appsv1.ReplicaSet {
 	return active
 }
 
-// GetPodWarnings fetches warning events for pods belonging to a specific ReplicaSet.
-// Returns a map of warning messages to their count in the current poll cycle.
-func (r *DeploymentRepository) GetPodWarnings(ctx context.Context, rs *appsv1.ReplicaSet) (map[string]int, error) {
+// GetPodEvents fetches events for pods belonging to a specific ReplicaSet.
+// Returns raw K8s events without any processing - ProcessEvents handles everything else.
+func (r *DeploymentRepository) GetPodEvents(ctx context.Context, rs *appsv1.ReplicaSet) ([]corev1.Event, error) {
 	// Use label selector from ReplicaSet to filter pods
 	labelSelector := metav1.FormatLabelSelector(rs.Spec.Selector)
 	pods, err := r.clientset.CoreV1().Pods(r.namespace).List(ctx, metav1.ListOptions{
@@ -136,25 +137,21 @@ func (r *DeploymentRepository) GetPodWarnings(ctx context.Context, rs *appsv1.Re
 		}
 	}
 
-	// Fetch only Warning events for Pods
+	// Fetch all events for Pods
 	eventList, err := r.clientset.CoreV1().Events(r.namespace).List(ctx, metav1.ListOptions{
-		FieldSelector: "type=Warning,involvedObject.kind=Pod",
+		FieldSelector: "involvedObject.kind=Pod",
 	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to fetch pod events: %w", err)
 	}
 
-	// Count warnings in this poll cycle
-	warningCounts := make(map[string]int)
+	// Filter to events for this ReplicaSet's pods
+	var result []corev1.Event
 	for _, event := range eventList.Items {
-		// Check if event is for one of our pods
-		if _, ok := podNames[event.InvolvedObject.Name]; !ok {
-			continue
+		if _, ok := podNames[event.InvolvedObject.Name]; ok {
+			result = append(result, event)
 		}
-
-		warningMsg := fmt.Sprintf("%s: %s", event.Reason, event.Message)
-		warningCounts[warningMsg]++
 	}
 
-	return warningCounts, nil
+	return result, nil
 }

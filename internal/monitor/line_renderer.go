@@ -6,8 +6,6 @@ package monitor
 import (
 	"fmt"
 	"io"
-	"sort"
-	"strings"
 	"time"
 )
 
@@ -26,112 +24,115 @@ func NewLineRenderer(config Config, output io.Writer) *LineRenderer {
 	}
 }
 
-// RenderSnapshot outputs a single timestamped status line followed by any warnings
+// RenderSnapshot outputs a single timestamped status line followed by any events
 func (r *LineRenderer) RenderSnapshot(snapshot *RolloutSnapshot) {
 	statusLine := r.formatStatusLine(snapshot)
 	fmt.Fprintln(r.output, statusLine)
 
-	// Render warnings if any
-	warnings := r.formatWarnings(snapshot.Warnings)
-	for _, warning := range warnings {
-		fmt.Fprintln(r.output, warning)
+	// Render events if any
+	eventLines := r.formatEvents(snapshot.Events)
+	for _, line := range eventLines {
+		fmt.Fprintln(r.output, line)
 	}
+
+	// Add blank line for visual separation
+	fmt.Fprintln(r.output)
 }
 
-// formatTimestamp returns ISO 8601 UTC timestamp with milliseconds
+// formatTimestamp returns compact local time (HH:MM:SS)
 func (r *LineRenderer) formatTimestamp(t time.Time) string {
-	return t.UTC().Format("2006-01-02T15:04:05.000Z")
+	return t.Local().Format("15:04:05")
 }
 
 // formatStatusLine generates the main status line
-// Format: <timestamp> replicaset/<rs-name> <status>: NEW:X/Y OLD:X/Y <metadata>
+// Format: <timestamp> <symbol> [REPLICASET X] [ROLLOUT STATUS] [NEW X/Y] [OLD X/Y] [ETA/DUR]
 func (r *LineRenderer) formatStatusLine(snapshot *RolloutSnapshot) string {
+	symbol := r.formatSymbol(snapshot.Status)
 	timestamp := r.formatTimestamp(snapshot.SnapshotTime)
 	status := r.formatStatus(snapshot.Status)
 	replicas := r.formatReplicaCounts(snapshot)
 	metadata := r.formatMetadata(snapshot)
 
-	return fmt.Sprintf("%s replicaset:%s status:%s %s %s", timestamp, snapshot.NewRSName, status, replicas, metadata)
+	return fmt.Sprintf("%s %s [REPLICASET %s] [ROLLOUT %s] %s %s", timestamp, symbol, snapshot.NewRSName, status, replicas, metadata)
 }
 
-// formatStatus converts RolloutStatus enum to string
+// formatSymbol returns a visual symbol for the rollout status
+func (r *LineRenderer) formatSymbol(status RolloutStatus) string {
+	switch status {
+	case StatusProgressing:
+		return "▶"
+	case StatusDeadlineExceeded:
+		return "✗"
+	case StatusComplete:
+		return "✓"
+	default:
+		return "?"
+	}
+}
+
+// formatStatus converts RolloutStatus enum to CAPS status word (matches K8s condition naming)
 func (r *LineRenderer) formatStatus(status RolloutStatus) string {
 	switch status {
 	case StatusProgressing:
-		return "progressing"
+		return "PROGRESSING"
 	case StatusDeadlineExceeded:
-		return "deadline-exceeded"
+		return "DEADLINE-EXCEEDED"
 	case StatusComplete:
-		return "complete"
+		return "COMPLETE"
 	default:
-		return "unknown"
+		return "UNKNOWN"
 	}
 }
 
 // formatReplicaCounts formats replica counts for NEW and OLD ReplicaSets
-// Format: NEW:<available>/<desired> OLD:<available>/<desired>
+// Format: [NEW X/Y] [OLD X/Y]
 func (r *LineRenderer) formatReplicaCounts(snapshot *RolloutSnapshot) string {
-	newReplicas := fmt.Sprintf("new:%d/%d", snapshot.NewRS.Available, snapshot.Desired)
-	oldReplicas := fmt.Sprintf("old:%d/%d", snapshot.OldRS.Available, snapshot.Desired)
-	return fmt.Sprintf("%s %s", newReplicas, oldReplicas)
+	return fmt.Sprintf("[NEW %d/%d] [OLD %d/%d]",
+		snapshot.NewRS.Available, snapshot.Desired,
+		snapshot.OldRS.Available, snapshot.Desired)
 }
 
-// formatMetadata formats contextual metadata (Started/ETA/Duration)
+// formatMetadata formats contextual metadata (ETA or DUR) in bracketed format
 func (r *LineRenderer) formatMetadata(snapshot *RolloutSnapshot) string {
 	// Show actual completion duration if rollout is done and we have ProgressUpdateTime
 	if snapshot.Status.IsDone() {
 		elapsed := snapshot.ProgressUpdateTime.Sub(snapshot.StartTime)
-		return fmt.Sprintf("duration:%s", FormatDuration(elapsed))
+		return fmt.Sprintf("[DUR %s]", FormatDuration(elapsed))
 	}
 
 	// Show ETA if available
 	if snapshot.EstimatedCompletion != nil {
 		remaining := time.Until(*snapshot.EstimatedCompletion)
-		return fmt.Sprintf("eta:%s", FormatDuration(remaining))
+		return fmt.Sprintf("[ETA %s]", FormatDuration(remaining))
 	}
 
 	// No ETA available
-	return "eta:-"
+	return "[ETA -]"
 }
 
-// formatWarnings formats warning lines with 4-space indentation
-// Returns array of formatted warning strings
-func (r *LineRenderer) formatWarnings(warnings []WarningEntry) []string {
-	if len(warnings) == 0 {
+// formatEvents formats event lines with tree connector style for line mode.
+func (r *LineRenderer) formatEvents(report EventSummary) []string {
+	if len(report.Clusters) == 0 {
 		return nil
 	}
 
-	// Sort warnings by count (descending)
-	sorted := make([]WarningEntry, len(warnings))
-	copy(sorted, warnings)
-	sort.Slice(sorted, func(i, j int) bool {
-		return sorted[i].Count > sorted[j].Count
-	})
-
-	// Truncate to max warnings
-	maxWarnings := r.config.MaxWarnings
 	var result []string
-
-	for i, warning := range sorted {
-		if i >= maxWarnings {
-			remaining := len(sorted) - maxWarnings
-			result = append(result, fmt.Sprintf("    ... %d more warning(s) not shown", remaining))
-			break
+	for _, c := range report.Clusters {
+		age := FormatDuration(time.Since(c.LastSeen)) + " ago"
+		var line string
+		if c.LookAlikeCount > 0 {
+			line = fmt.Sprintf("         └─ %s %s: %s (+%d look-alike, last %s)",
+				c.Symbol(), c.Reason, c.Message, c.LookAlikeCount, age)
+		} else {
+			line = fmt.Sprintf("         └─ %s %s: %s (last %s)",
+				c.Symbol(), c.Reason, c.Message, age)
 		}
+		result = append(result, line)
+	}
 
-		// Sanitize message and format with prefix
-		sanitizedMessage := r.sanitizeMessage(warning.Message)
-		formatted := fmt.Sprintf("    WARNING: %s (%dx)", sanitizedMessage, warning.Count)
-		result = append(result, formatted)
+	if report.IgnoredCount > 0 {
+		result = append(result, fmt.Sprintf("         └─ ... %d event(s) ignored", report.IgnoredCount))
 	}
 
 	return result
-}
-
-// sanitizeMessage replaces newlines with spaces to maintain single-line format
-func (r *LineRenderer) sanitizeMessage(msg string) string {
-	// Replace newlines and carriage returns with space
-	msg = strings.ReplaceAll(msg, "\n", " ")
-	msg = strings.ReplaceAll(msg, "\r", " ")
-	return msg
 }

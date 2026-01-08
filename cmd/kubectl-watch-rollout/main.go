@@ -61,7 +61,8 @@ func main() {
 	configFlags := genericclioptions.NewConfigFlags(true)
 	var untilComplete bool
 	var lineMode bool
-	var ignoreWarnings string
+	var ignoreEvents string
+	var similarityThreshold float64
 
 	cmd := &cobra.Command{
 		Use:   "kubectl watch-rollout DEPLOYMENT",
@@ -123,9 +124,10 @@ This command monitors your deployment rollout in real-time, showing:
 			cfg := monitor.DefaultConfig()
 			cfg.UntilComplete = untilComplete
 			cfg.LineMode = lineMode
+			cfg.SimilarityThreshold = similarityThreshold
 
-			if ignoreWarnings != "" {
-				cfg.IgnoreWarnings, err = regexp.Compile(ignoreWarnings)
+			if ignoreEvents != "" {
+				cfg.IgnoreEvents, err = regexp.Compile(ignoreEvents)
 				if err != nil {
 					return fmt.Errorf("failed to parse regular expression: %w", err)
 				}
@@ -143,7 +145,9 @@ This command monitors your deployment rollout in real-time, showing:
 	configFlags.AddFlags(cmd.Flags())
 	cmd.Flags().BoolVar(&untilComplete, "until-complete", false, "Exit after monitoring one rollout to completion (default: continuous monitoring)")
 	cmd.Flags().BoolVar(&lineMode, "line-mode", false, "Use line-based output format suitable for log aggregation (default: interactive mode)")
-	cmd.Flags().StringVar(&ignoreWarnings, "ignore-warnings", "", "Ignore warnings matching the specified regular expression")
+	cmd.Flags().StringVar(&ignoreEvents, "ignore-events", "", "Ignore events matching the specified regular expression (matched against \"Reason: Message\")")
+	cmd.Flags().Float64Var(&similarityThreshold, "similarity-threshold", monitor.DefaultSimilarityThreshold,
+		"Event clustering threshold (0.0-1.0, lower = more aggressive clustering)")
 
 	if err := cmd.Execute(); err != nil {
 		// Silent exit for progress deadline exceeded
