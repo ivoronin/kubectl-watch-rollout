@@ -13,6 +13,6 @@ jobs:
     with:
       language: go
       docker: false
-      brew: true
+      brew: false
       krew: true
     secrets: inherit
