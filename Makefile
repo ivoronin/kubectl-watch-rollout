@@ -1,16 +1,26 @@
-.PHONY: build clean test install lint
+PROJECT := kubectl-watch-rollout
+VERSION ?= dev
+LDFLAGS := -s -w -X main.version=$(VERSION)
+
+.PHONY: build test test-all lint release clean install
 
 build:
-	go build -o bin/kubectl-watch_rollout ./cmd/kubectl-watch-rollout
-
-clean:
-	rm -rf bin/
+	go build -ldflags "$(LDFLAGS)" -o bin/kubectl-watch_rollout ./cmd/$(PROJECT)
 
 test:
-	go test ./...
+	go test -race ./...
 
-install:
-	go install ./cmd/kubectl-watch-rollout
+test-all: lint test
+	@echo "All tests passed"
 
 lint:
-	golangci-lint run ./...
+	golangci-lint run
+
+release:
+	goreleaser release --clean
+
+install:
+	go install -ldflags "$(LDFLAGS)" ./cmd/$(PROJECT)
+
+clean:
+	rm -rf bin/ dist/

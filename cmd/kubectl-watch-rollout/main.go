@@ -20,6 +20,8 @@ import (
 	"k8s.io/client-go/kubernetes"
 )
 
+var version = "dev"
+
 // parseDeploymentArg extracts deployment name from argument with optional resource type prefix.
 // Supports kubectl-style specs like "deployment/my-app" or "deployments.apps/my-app".
 // Returns extracted deployment name or error if format invalid or not a deployment type.
@@ -87,6 +89,7 @@ This command monitors your deployment rollout in real-time, showing:
   # Watch using resource type prefix (kubectl-style)
   kubectl watch-rollout deployment/my-deployment -n production
   kubectl watch-rollout deployments.apps/my-deployment -n production`,
+		Version:           version,
 		Args:              cobra.ExactArgs(1),
 		SilenceUsage:      true,
 		SilenceErrors:     true,
