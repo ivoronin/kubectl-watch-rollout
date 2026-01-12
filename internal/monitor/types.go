@@ -66,16 +66,6 @@ type RolloutResult struct {
 	Failed bool
 }
 
-// RolloutStatus is an alias for types.RolloutStatus for backwards compatibility.
-type RolloutStatus = types.RolloutStatus
-
-// Status constants - re-exported from types package
-const (
-	StatusProgressing      = types.StatusProgressing
-	StatusDeadlineExceeded = types.StatusDeadlineExceeded
-	StatusComplete         = types.StatusComplete
-)
-
 // isDeploymentComplete checks if deployment rollout is complete
 func isDeploymentComplete(status appsv1.DeploymentStatus) bool {
 	return hasCondition(status, appsv1.DeploymentAvailable, corev1.ConditionTrue, "") &&
@@ -89,18 +79,18 @@ func isDeploymentFailed(status appsv1.DeploymentStatus) bool {
 
 // CalculateRolloutStatus determines rollout status from deployment conditions.
 // Returns Complete if fully available, DeadlineExceeded if failed, otherwise Progressing.
-func CalculateRolloutStatus(deployment *appsv1.Deployment, newRS *appsv1.ReplicaSet) RolloutStatus {
+func CalculateRolloutStatus(deployment *appsv1.Deployment, newRS *appsv1.ReplicaSet) types.RolloutStatus {
 	status := deployment.Status
 
 	if isDeploymentComplete(status) {
-		return StatusComplete
+		return types.StatusComplete
 	}
 
 	if isDeploymentFailed(status) {
-		return StatusDeadlineExceeded
+		return types.StatusDeadlineExceeded
 	}
 
-	return StatusProgressing
+	return types.StatusProgressing
 }
 
 // hasCondition checks if a specific condition exists with given type and status.

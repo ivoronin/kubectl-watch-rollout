@@ -22,6 +22,13 @@ import (
 
 var version = "dev"
 
+// validDeploymentTypes lists accepted resource type prefixes for deployment arguments.
+var validDeploymentTypes = []string{
+	"deployment", "deployments", "deploy",
+	"deployment.apps", "deployments.apps",
+	"deployment.v1.apps", "deployments.v1.apps",
+}
+
 // parseDeploymentArg extracts deployment name from argument with optional resource type prefix.
 // Supports kubectl-style specs like "deployment/my-app" or "deployments.apps/my-app".
 // Returns extracted deployment name or error if format invalid or not a deployment type.
@@ -38,14 +45,8 @@ func parseDeploymentArg(arg string) (string, error) {
 	resourceType, name := parts[0], parts[1]
 
 	// Validate it's a deployment resource type
-	validTypes := []string{
-		"deployment", "deployments", "deploy",
-		"deployment.apps", "deployments.apps",
-		"deployment.v1.apps", "deployments.v1.apps",
-	}
-
 	isValid := false
-	for _, validType := range validTypes {
+	for _, validType := range validDeploymentTypes {
 		if resourceType == validType {
 			isValid = true
 			break

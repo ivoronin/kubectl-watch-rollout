@@ -64,13 +64,13 @@ func (r *LineRenderer) formatStatusLine(snapshot *types.RolloutSnapshot) string 
 }
 
 // formatSymbol returns a visual symbol for the rollout status
-func (r *LineRenderer) formatSymbol(status RolloutStatus) string {
+func (r *LineRenderer) formatSymbol(status types.RolloutStatus) string {
 	switch status {
-	case StatusProgressing:
+	case types.StatusProgressing:
 		return "▶"
-	case StatusDeadlineExceeded:
+	case types.StatusDeadlineExceeded:
 		return "✗"
-	case StatusComplete:
+	case types.StatusComplete:
 		return "✓"
 	default:
 		return "?"
@@ -78,13 +78,13 @@ func (r *LineRenderer) formatSymbol(status RolloutStatus) string {
 }
 
 // formatStatus converts RolloutStatus enum to CAPS status word (matches K8s condition naming)
-func (r *LineRenderer) formatStatus(status RolloutStatus) string {
+func (r *LineRenderer) formatStatus(status types.RolloutStatus) string {
 	switch status {
-	case StatusProgressing:
+	case types.StatusProgressing:
 		return "PROGRESSING"
-	case StatusDeadlineExceeded:
+	case types.StatusDeadlineExceeded:
 		return "DEADLINE-EXCEEDED"
-	case StatusComplete:
+	case types.StatusComplete:
 		return "COMPLETE"
 	default:
 		return "UNKNOWN"
