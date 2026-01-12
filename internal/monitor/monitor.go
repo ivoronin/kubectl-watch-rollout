@@ -25,6 +25,11 @@ type Controller struct {
 	view           View
 	deploymentName string
 	config         Config
+
+	// ETA smoothing state - only recalculate when progress changes
+	etaLastRSName string     // Reset ETA state on new rollout
+	etaLastAvail  int32      // Track when Available count changes
+	etaTarget     *time.Time // Absolute target time (counts down naturally)
 }
 
 // New creates a new Controller instance for monitoring a deployment rollout

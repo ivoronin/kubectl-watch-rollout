@@ -54,33 +54,56 @@ func parseStrategyParams(strategy appsv1.DeploymentStrategy) strategyParams {
 	return params
 }
 
-// calculateETA estimates rollout completion time based on current progress.
-// Returns nil if ETA cannot be calculated (insufficient progress, complete, or unrealistic estimate).
-func calculateETA(progress float64, startTime time.Time, progressUpdateTime *time.Time) *time.Time {
+// updateETA calculates ETA with smooth countdown behavior.
+// Only recalculates when Available count changes; otherwise returns existing target.
+// This ensures ETA counts down smoothly between progress updates.
+func (c *Controller) updateETA(available, desired int32, startTime time.Time, rsName string) *time.Time {
+	// Reset state if ReplicaSet changed (new rollout started)
+	if rsName != c.etaLastRSName {
+		c.etaLastRSName = rsName
+		c.etaLastAvail = 0
+		c.etaTarget = nil
+	}
+
+	progress := calculateProgress(available, desired)
+
 	if progress < MinProgressForETA || progress >= 1.0 {
+		c.etaTarget = nil
+
 		return nil
 	}
 
-	if progressUpdateTime == nil {
-		return nil
+	// Only recalculate when available count actually changes
+	if available != c.etaLastAvail {
+		c.etaLastAvail = available
+
+		elapsed := time.Since(startTime)
+		if elapsed <= 0 {
+			return nil
+		}
+
+		rate := progress / elapsed.Seconds()
+		if rate <= 0 {
+			return nil
+		}
+
+		remainingSeconds := (1.0 - progress) / rate
+		if remainingSeconds >= float64(MaxRealisticETAHours*3600) {
+			c.etaTarget = nil
+
+			return nil
+		}
+
+		eta := time.Now().Add(time.Duration(remainingSeconds * float64(time.Second)))
+		c.etaTarget = &eta
 	}
 
-	elapsed := progressUpdateTime.Sub(startTime)
-	if elapsed <= 0 {
-		return nil
+	// Return existing target - time.Until() will naturally count down
+	if c.etaTarget != nil && time.Until(*c.etaTarget) <= 0 {
+		return nil // Don't show negative/zero ETA
 	}
 
-	totalEstimated := time.Duration(float64(elapsed) / progress)
-	if totalEstimated >= MaxRealisticETAHours*time.Hour {
-		return nil
-	}
-
-	eta := startTime.Add(totalEstimated)
-	if time.Until(eta) <= 0 {
-		return nil
-	}
-
-	return &eta
+	return c.etaTarget
 }
 
 // aggregateOldRSState sums replica counts across all old ReplicaSets.
@@ -155,7 +178,7 @@ func (c *Controller) buildSnapshot(ctx context.Context) (*types.RolloutSnapshot,
 		StartTime:           newRS.CreationTimestamp.Time,
 		SnapshotTime:        time.Now(),
 		ProgressUpdateTime:  progressUpdateTime,
-		EstimatedCompletion: calculateETA(newProgress, newRS.CreationTimestamp.Time, progressUpdateTime),
+		EstimatedCompletion: c.updateETA(newRSState.Available, desired, newRS.CreationTimestamp.Time, newRS.Name),
 		Status:              CalculateRolloutStatus(deployment),
 		Events:              SummarizeEvents(rawEvents, c.config.IgnoreEvents, c.config.SimilarityThreshold),
 	}, nil
