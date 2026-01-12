@@ -1,7 +1,6 @@
-// Package monitor provides Kubernetes deployment rollout monitoring functionality.
-//
-// This file contains the repository layer for Kubernetes API access.
 package monitor
+
+// This file contains the repository layer for Kubernetes API access.
 
 import (
 	"context"
@@ -35,6 +34,7 @@ func (r *DeploymentRepository) GetDeployment(ctx context.Context, name string) (
 	if err != nil {
 		return nil, fmt.Errorf("deployment '%s' not found in namespace '%s': %w", name, r.namespace, err)
 	}
+
 	return deployment, nil
 }
 
@@ -59,7 +59,10 @@ func (r *DeploymentRepository) FindActiveRollout(ctx context.Context) (string, e
 
 // GetReplicaSets returns old and new ReplicaSets for a deployment.
 // Returns the newest ReplicaSet and a list of older active ReplicaSets.
-func (r *DeploymentRepository) GetReplicaSets(ctx context.Context, deployment *appsv1.Deployment) ([]*appsv1.ReplicaSet, *appsv1.ReplicaSet, error) {
+func (r *DeploymentRepository) GetReplicaSets(
+	ctx context.Context,
+	deployment *appsv1.Deployment,
+) ([]*appsv1.ReplicaSet, *appsv1.ReplicaSet, error) {
 	replicaSets, err := r.clientset.AppsV1().ReplicaSets(r.namespace).List(ctx, metav1.ListOptions{
 		LabelSelector: metav1.FormatLabelSelector(deployment.Spec.Selector),
 	})
@@ -67,8 +70,11 @@ func (r *DeploymentRepository) GetReplicaSets(ctx context.Context, deployment *a
 		return nil, nil, fmt.Errorf("failed to fetch ReplicaSets for deployment '%s': %w", deployment.Name, err)
 	}
 
-	var oldRS []*appsv1.ReplicaSet
-	var newRS *appsv1.ReplicaSet
+	var (
+		oldRS []*appsv1.ReplicaSet
+		newRS *appsv1.ReplicaSet
+	)
+
 	maxRevision := int64(0)
 
 	for i := range replicaSets.Items {
@@ -81,12 +87,14 @@ func (r *DeploymentRepository) GetReplicaSets(ctx context.Context, deployment *a
 
 		// Get revision
 		revision := int64(0)
+
 		if revisionStr, ok := rs.Annotations[RevisionAnnotation]; ok {
 			parsedRev, err := strconv.ParseInt(revisionStr, parseIntBase10, parseIntBits64)
 			if err != nil {
 				return nil, nil, fmt.Errorf("failed to parse revision %q for ReplicaSet %s in deployment '%s': %w",
 					revisionStr, rs.Name, deployment.Name, err)
 			}
+
 			revision = parsedRev
 		}
 
@@ -94,6 +102,7 @@ func (r *DeploymentRepository) GetReplicaSets(ctx context.Context, deployment *a
 			if newRS != nil {
 				oldRS = append(oldRS, newRS)
 			}
+
 			maxRevision = revision
 			newRS = rs
 		} else {
@@ -108,11 +117,13 @@ func (r *DeploymentRepository) GetReplicaSets(ctx context.Context, deployment *a
 // Inactive ReplicaSets (scaled to 0) excluded for clearer OLD metrics visualization.
 func filterActiveReplicaSets(rss []*appsv1.ReplicaSet) []*appsv1.ReplicaSet {
 	var active []*appsv1.ReplicaSet
+
 	for _, rs := range rss {
 		if getInt32OrDefault(rs.Spec.Replicas, minActiveReplicas) > minActiveReplicas {
 			active = append(active, rs)
 		}
 	}
+
 	return active
 }
 
@@ -121,6 +132,7 @@ func filterActiveReplicaSets(rss []*appsv1.ReplicaSet) []*appsv1.ReplicaSet {
 func (r *DeploymentRepository) GetPodEvents(ctx context.Context, rs *appsv1.ReplicaSet) ([]corev1.Event, error) {
 	// Use label selector from ReplicaSet to filter pods
 	labelSelector := metav1.FormatLabelSelector(rs.Spec.Selector)
+
 	pods, err := r.clientset.CoreV1().Pods(r.namespace).List(ctx, metav1.ListOptions{
 		LabelSelector: labelSelector,
 	})
@@ -147,6 +159,7 @@ func (r *DeploymentRepository) GetPodEvents(ctx context.Context, rs *appsv1.Repl
 
 	// Filter to events for this ReplicaSet's pods
 	var result []corev1.Event
+
 	for _, event := range eventList.Items {
 		if _, ok := podNames[event.InvolvedObject.Name]; ok {
 			result = append(result, event)

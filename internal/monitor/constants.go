@@ -1,7 +1,7 @@
-// Kubernetes deployment constants vendored from:
-// https://github.com/kubernetes/kubernetes/blob/master/pkg/controller/deployment/util/deployment_util.go
 package monitor
 
+// Constants vendored from:
+// https://github.com/kubernetes/kubernetes/blob/master/pkg/controller/deployment/util/deployment_util.go
 const (
 	// RevisionAnnotation is the revision annotation of a deployment's replica sets which records its rollout sequence
 	RevisionAnnotation = "deployment.kubernetes.io/revision"
@@ -19,7 +19,4 @@ const (
 	// Parsing constants
 	parseIntBase10 = 10 // Decimal base for string to int conversion
 	parseIntBits64 = 64 // 64-bit integer size for parsing
-
-	// Display formatting
-	tablePaddingSpaces = 3 // Column padding in tabwriter output
 )

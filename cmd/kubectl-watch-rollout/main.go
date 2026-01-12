@@ -11,6 +11,7 @@ import (
 	"os"
 	"os/signal"
 	"regexp"
+	"slices"
 	"strings"
 	"syscall"
 
@@ -21,6 +22,13 @@ import (
 )
 
 var version = "dev"
+
+// validDeploymentTypes lists accepted resource type prefixes for deployment arguments.
+var validDeploymentTypes = []string{
+	"deployment", "deployments", "deploy",
+	"deployment.apps", "deployments.apps",
+	"deployment.v1.apps", "deployments.v1.apps",
+}
 
 // parseDeploymentArg extracts deployment name from argument with optional resource type prefix.
 // Supports kubectl-style specs like "deployment/my-app" or "deployments.apps/my-app".
@@ -38,33 +46,39 @@ func parseDeploymentArg(arg string) (string, error) {
 	resourceType, name := parts[0], parts[1]
 
 	// Validate it's a deployment resource type
-	validTypes := []string{
-		"deployment", "deployments", "deploy",
-		"deployment.apps", "deployments.apps",
-		"deployment.v1.apps", "deployments.v1.apps",
-	}
-
-	isValid := false
-	for _, validType := range validTypes {
-		if resourceType == validType {
-			isValid = true
-			break
-		}
-	}
-
-	if !isValid {
-		return "", fmt.Errorf("resource type '%s' is not a deployment (use: deployment, deployments, or deploy)", resourceType)
+	if !slices.Contains(validDeploymentTypes, resourceType) {
+		return "", fmt.Errorf(
+			"resource type '%s' is not a deployment (use: deployment, deployments, or deploy)",
+			resourceType,
+		)
 	}
 
 	return name, nil
 }
 
 func main() {
+	cmd := newRootCommand()
+
+	err := cmd.Execute()
+	if err != nil {
+		if !errors.Is(err, monitor.ErrProgressDeadlineExceeded) {
+			fmt.Fprintf(os.Stderr, "Error: %v\n\n", err)
+		}
+
+		os.Exit(1)
+	}
+}
+
+// newRootCommand creates the root cobra command with all flags configured.
+func newRootCommand() *cobra.Command {
 	configFlags := genericclioptions.NewConfigFlags(true)
-	var untilComplete bool
-	var lineMode bool
-	var ignoreEvents string
-	var similarityThreshold float64
+
+	var (
+		untilComplete       bool
+		lineMode            bool
+		ignoreEvents        string
+		similarityThreshold float64
+	)
 
 	cmd := &cobra.Command{
 		Use:   "kubectl watch-rollout DEPLOYMENT",
@@ -94,70 +108,78 @@ This command monitors your deployment rollout in real-time, showing:
 		SilenceUsage:      true,
 		SilenceErrors:     true,
 		DisableAutoGenTag: true,
-		RunE: func(cmd *cobra.Command, args []string) error {
-			restConfig, err := configFlags.ToRESTConfig()
-			if err != nil {
-				return fmt.Errorf("failed to load kubeconfig: %w", err)
-			}
-
-			clientset, err := kubernetes.NewForConfig(restConfig)
-			if err != nil {
-				return fmt.Errorf("failed to connect to Kubernetes cluster (check cluster access and credentials): %w", err)
-			}
-
-			namespace, _, err := configFlags.ToRawKubeConfigLoader().Namespace()
-			if err != nil {
-				return fmt.Errorf("failed to determine namespace (use -n flag to specify): %w", err)
-			}
-
-			// Setup signal handling for graceful shutdown
-			ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
-			defer cancel()
-
-			// Parse deployment name from argument
-			deploymentName, err := parseDeploymentArg(args[0])
-			if err != nil {
-				return err
-			}
-
-			// Create repository
-			repo := monitor.NewDeploymentRepository(clientset, namespace)
-
-			// Create monitor with configuration
-			cfg := monitor.DefaultConfig()
-			cfg.UntilComplete = untilComplete
-			cfg.LineMode = lineMode
-			cfg.SimilarityThreshold = similarityThreshold
-
-			if ignoreEvents != "" {
-				cfg.IgnoreEvents, err = regexp.Compile(ignoreEvents)
-				if err != nil {
-					return fmt.Errorf("failed to parse regular expression: %w", err)
-				}
-			}
-
-			m, err := monitor.NewWithConfig(repo, deploymentName, cfg)
-			if err != nil {
-				return fmt.Errorf("failed to initialize monitoring: %w", err)
-			}
-
-			return m.Run(ctx)
+		RunE: func(_ *cobra.Command, args []string) error {
+			return runMonitor(configFlags, args[0], untilComplete, lineMode, ignoreEvents, similarityThreshold)
 		},
 	}
 
 	configFlags.AddFlags(cmd.Flags())
-	cmd.Flags().BoolVar(&untilComplete, "until-complete", false, "Exit after monitoring one rollout to completion (default: continuous monitoring)")
-	cmd.Flags().BoolVar(&lineMode, "line-mode", false, "Use line-based output format suitable for log aggregation (default: interactive mode)")
-	cmd.Flags().StringVar(&ignoreEvents, "ignore-events", "", "Ignore events matching the specified regular expression (matched against \"Reason: Message\")")
+	cmd.Flags().BoolVar(&untilComplete, "until-complete", false,
+		"Exit after monitoring one rollout to completion (default: continuous monitoring)")
+	cmd.Flags().BoolVar(&lineMode, "line-mode", false,
+		"Use line-based output format suitable for log aggregation (default: interactive mode)")
+	cmd.Flags().StringVar(&ignoreEvents, "ignore-events", "",
+		"Ignore events matching the specified regular expression (matched against \"Reason: Message\")")
 	cmd.Flags().Float64Var(&similarityThreshold, "similarity-threshold", monitor.DefaultSimilarityThreshold,
-		"Event clustering threshold (0.0-1.0, lower = more aggressive clustering)")
+		"Event clustering threshold (0.0-1.0, token match ratio, lower = more aggressive)")
 
-	if err := cmd.Execute(); err != nil {
-		// Silent exit for progress deadline exceeded
-		if !errors.Is(err, monitor.ErrProgressDeadlineExceeded) {
-			fmt.Fprintf(os.Stderr, "Error: %v\n\n", err)
-		}
+	return cmd
+}
 
-		os.Exit(1)
+// runMonitor executes the deployment rollout monitoring.
+func runMonitor(
+	configFlags *genericclioptions.ConfigFlags,
+	deploymentArg string,
+	untilComplete, lineMode bool,
+	ignoreEvents string,
+	similarityThreshold float64,
+) error {
+	restConfig, err := configFlags.ToRESTConfig()
+	if err != nil {
+		return fmt.Errorf("failed to load kubeconfig: %w", err)
 	}
+
+	clientset, err := kubernetes.NewForConfig(restConfig)
+	if err != nil {
+		return fmt.Errorf("failed to connect to Kubernetes cluster (check cluster access and credentials): %w", err)
+	}
+
+	namespace, _, err := configFlags.ToRawKubeConfigLoader().Namespace()
+	if err != nil {
+		return fmt.Errorf("failed to determine namespace (use -n flag to specify): %w", err)
+	}
+
+	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer cancel()
+
+	deploymentName, err := parseDeploymentArg(deploymentArg)
+	if err != nil {
+		return err
+	}
+
+	repo := monitor.NewDeploymentRepository(clientset, namespace)
+
+	cfg := monitor.DefaultConfig()
+	cfg.UntilComplete = untilComplete
+	cfg.LineMode = lineMode
+	cfg.SimilarityThreshold = similarityThreshold
+
+	if ignoreEvents != "" {
+		cfg.IgnoreEvents, err = regexp.Compile(ignoreEvents)
+		if err != nil {
+			return fmt.Errorf("failed to parse regular expression: %w", err)
+		}
+	}
+
+	m, err := monitor.NewWithConfig(repo, deploymentName, cfg)
+	if err != nil {
+		return fmt.Errorf("failed to initialize monitoring: %w", err)
+	}
+
+	err = m.Run(ctx)
+	if err != nil {
+		return fmt.Errorf("monitoring failed: %w", err)
+	}
+
+	return nil
 }
