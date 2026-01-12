@@ -67,15 +67,9 @@ func (m Model) Update(teaMsg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 
 	case SnapshotMsg:
+		firstSnapshot := !m.hasData
 		m.hasData = true
-		cmds = append(cmds,
-			m.rolloutInfo.Update(t),
-			m.progressBar.Update(t),
-			m.podStats.Update(t),
-			m.podsGrid.Update(t),
-			m.eventsTable.Update(t),
-			m.statusbar.Update(t),
-		)
+		cmds = append(cmds, m.updateComponents(t, firstSnapshot)...)
 
 	case spinner.TickMsg:
 		if !m.hasData {
@@ -180,4 +174,22 @@ func (m Model) View() string {
 		eventsRow,
 		podsGridRow,
 	)
+}
+
+// updateComponents dispatches snapshot to all sub-components and sets window title on first data.
+func (m Model) updateComponents(msg SnapshotMsg, firstSnapshot bool) []tea.Cmd {
+	cmds := []tea.Cmd{
+		m.rolloutInfo.Update(msg),
+		m.progressBar.Update(msg),
+		m.podStats.Update(msg),
+		m.podsGrid.Update(msg),
+		m.eventsTable.Update(msg),
+		m.statusbar.Update(msg),
+	}
+
+	if firstSnapshot {
+		cmds = append(cmds, tea.SetWindowTitle("kubectl-watch-rollout: "+msg.Snapshot.DeploymentName))
+	}
+
+	return cmds
 }
