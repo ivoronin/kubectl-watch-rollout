@@ -150,7 +150,7 @@ This command monitors your deployment rollout in real-time, showing:
 	cmd.Flags().BoolVar(&lineMode, "line-mode", false, "Use line-based output format suitable for log aggregation (default: interactive mode)")
 	cmd.Flags().StringVar(&ignoreEvents, "ignore-events", "", "Ignore events matching the specified regular expression (matched against \"Reason: Message\")")
 	cmd.Flags().Float64Var(&similarityThreshold, "similarity-threshold", monitor.DefaultSimilarityThreshold,
-		"Event clustering threshold (0.0-1.0, lower = more aggressive clustering)")
+		"Event clustering threshold (0.0-1.0, token match ratio, lower = more aggressive)")
 
 	if err := cmd.Execute(); err != nil {
 		// Silent exit for progress deadline exceeded

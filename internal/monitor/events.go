@@ -1,6 +1,6 @@
 // Package monitor provides Kubernetes deployment rollout monitoring functionality.
 //
-// This file contains centralized event processing logic used by both renderers.
+// This file contains event processing logic using the Drain log parsing algorithm.
 package monitor
 
 import (
@@ -9,33 +9,51 @@ import (
 	"strings"
 	"time"
 
+	"github.com/faceair/drain"
+	"github.com/ivoronin/kubectl-watch-rollout/internal/types"
 	corev1 "k8s.io/api/core/v1"
-
-	"github.com/xrash/smetrics"
 )
 
-const (
-	// maxMessageLength is the maximum length for event messages before truncation
-	maxMessageLength = 80
-)
+// maskPattern defines a regex pattern and its semantic replacement token.
+type maskPattern struct {
+	pattern *regexp.Regexp
+	token   string
+}
 
-// groupData holds messages and their timestamps for clustering.
+// Pre-compiled K8s masking patterns for clustering.
+// Order matters: more specific patterns first.
+var defaultMaskPatterns = []maskPattern{
+	// AWS ECR images (incl China): 123456789.dkr.ecr.region.amazonaws.com[.cn]/path/image:tag → <IMAGE>
+	{regexp.MustCompile(`\b\d+\.dkr\.ecr\.[a-z0-9-]+\.amazonaws\.com(?:\.cn)?/[a-zA-Z0-9/:._@-]+`), "<IMAGE>"},
+	// Namespace/pod paths: default/nginx-abc123-xyz → <NS>/<POD>
+	{regexp.MustCompile(`\b[a-z0-9-]+/[a-z0-9]+-[a-z0-9]{5,10}-[a-z0-9]{5}\b`), "<NS>/<POD>"},
+	// Pod names: nginx-deployment-abc123-xyz → <POD>
+	{regexp.MustCompile(`\b[a-z0-9]+-[a-z0-9]{5,10}-[a-z0-9]{5}\b`), "<POD>"},
+	// AWS EC2 node names: ip-172-28-129-199.ec2.internal → <NODE>
+	{regexp.MustCompile(`\bip-\d+-\d+-\d+-\d+\.[a-z0-9.-]+\.internal\b`), "<NODE>"},
+	// GKE node names: gke-cluster-default-pool-abc123 → <NODE>
+	{regexp.MustCompile(`\bgke-[a-z0-9-]+\b`), "<NODE>"},
+	// IP with port: 10.0.0.1:8080 → <IP:PORT>
+	{regexp.MustCompile(`\b\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}:\d+\b`), "<IP:PORT>"},
+	// IP without port: 10.0.0.1 → <IP>
+	{regexp.MustCompile(`\b\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}\b`), "<IP>"},
+	// UUIDs: 550e8400-e29b-41d4-a716-446655440000 → <UUID>
+	{regexp.MustCompile(`(?i)\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b`), "<UUID>"},
+}
+
+// groupData holds messages and timestamps for clustering.
 type groupData struct {
 	messages []string
 	times    []time.Time
 }
 
-// SummarizeEvents takes raw K8s events and produces formatted output ready for rendering.
-// This is the single entry point for all event processing:
-// 1. Filter by ignoreRegex, group by Type+Reason
-// 2. Cluster similar messages within each group
-// 3. Sort by priority (warnings first, then by count)
-func SummarizeEvents(events []corev1.Event, ignoreRegex *regexp.Regexp, threshold float64) EventSummary {
+// SummarizeEvents processes K8s events into clustered summary.
+func SummarizeEvents(events []corev1.Event, ignoreRegex *regexp.Regexp, threshold float64) types.EventSummary {
 	if len(events) == 0 {
-		return EventSummary{}
+		return types.EventSummary{}
 	}
 
-	// Step 1: Filter by ignoreRegex, group by Type+Reason
+	// Group by Type+Reason, apply ignore filter
 	type typeReasonKey struct{ Type, Reason string }
 	groups := make(map[typeReasonKey]*groupData)
 	ignoredCount := 0
@@ -57,35 +75,120 @@ func SummarizeEvents(events []corev1.Event, ignoreRegex *regexp.Regexp, threshol
 	}
 
 	if len(groups) == 0 {
-		return EventSummary{IgnoredCount: ignoredCount}
+		return types.EventSummary{IgnoredCount: ignoredCount}
 	}
 
-	// Step 2: Cluster similar messages and build EventClusters
-	var result []EventCluster
+	// Cluster each group using Drain
+	var result []types.EventCluster
 	for key, group := range groups {
-		clusters := clusterMessages(group, threshold, key.Type, key.Reason)
+		clusters := clusterWithDrain(group, threshold, key.Type, key.Reason)
 		result = append(result, clusters...)
 	}
 
-	// Step 3: Sort - Warning first, then by count descending, then by reason
+	// Sort: warnings first, then by count, then by reason
 	sort.Slice(result, func(i, j int) bool {
 		if result[i].Type != result[j].Type {
 			return result[i].Type == corev1.EventTypeWarning
 		}
-		if result[i].LookAlikeCount != result[j].LookAlikeCount {
-			return result[i].LookAlikeCount > result[j].LookAlikeCount
+		if result[i].ExemplarCount != result[j].ExemplarCount {
+			return result[i].ExemplarCount > result[j].ExemplarCount
 		}
 		return result[i].Reason < result[j].Reason
 	})
 
-	return EventSummary{
+	return types.EventSummary{
 		Clusters:     result,
 		IgnoredCount: ignoredCount,
 	}
 }
 
-// getEventTime returns the best available timestamp for an event.
-// Prefers LastTimestamp, falls back to EventTime, then CreationTimestamp.
+// clusterMeta tracks data for a cluster.
+type clusterMeta struct {
+	times []time.Time
+}
+
+// clusterWithDrain uses Drain algorithm to cluster similar messages.
+func clusterWithDrain(group *groupData, threshold float64, eventType, reason string) []types.EventCluster {
+	if len(group.messages) == 0 {
+		return nil
+	}
+
+	// Configure Drain
+	config := drain.DefaultConfig()
+	config.SimTh = threshold
+	d := drain.New(config)
+
+	// Phase 1: Train all messages first (templates evolve as Drain learns)
+	type msgCluster struct {
+		cluster *drain.LogCluster
+		time    time.Time
+	}
+	trained := make([]msgCluster, len(group.messages))
+
+	for i, msg := range group.messages {
+		masked := maskMessage(sanitizeMessage(msg))
+		trained[i] = msgCluster{
+			cluster: d.Train(masked),
+			time:    group.times[i],
+		}
+	}
+
+	// Phase 2: Now read FINAL templates (after all learning is done)
+	// Use cluster pointer as key since template strings can change during training
+	clusterMetas := make(map[*drain.LogCluster]*clusterMeta)
+
+	for _, tc := range trained {
+		if clusterMetas[tc.cluster] == nil {
+			clusterMetas[tc.cluster] = &clusterMeta{}
+		}
+		clusterMetas[tc.cluster].times = append(clusterMetas[tc.cluster].times, tc.time)
+	}
+
+	// Phase 3: Build EventClusters with FINAL templates
+	result := make([]types.EventCluster, 0, len(clusterMetas))
+
+	for cluster, meta := range clusterMetas {
+		// Find latest timestamp
+		var lastSeen time.Time
+		for _, t := range meta.times {
+			if t.After(lastSeen) {
+				lastSeen = t
+			}
+		}
+
+		result = append(result, types.EventCluster{
+			Type:          eventType,
+			Reason:        reason,
+			Message:       extractTemplate(cluster.String()), // Read final evolved template
+			ExemplarCount: len(meta.times),
+			LastSeen:      lastSeen,
+		})
+	}
+
+	return result
+}
+
+// extractTemplate extracts template from Drain's String() format.
+// Input:  "id={1} : size={3} : template content here"
+// Output: "template content here"
+func extractTemplate(s string) string {
+	const sep = " : "
+	idx := strings.LastIndex(s, sep)
+	if idx == -1 {
+		return s
+	}
+	return s[idx+len(sep):]
+}
+
+// maskMessage applies K8s-specific masking patterns for clustering.
+func maskMessage(msg string) string {
+	for _, p := range defaultMaskPatterns {
+		msg = p.pattern.ReplaceAllString(msg, p.token)
+	}
+	return msg
+}
+
+// getEventTime returns the best timestamp for an event.
 func getEventTime(evt *corev1.Event) time.Time {
 	if !evt.LastTimestamp.IsZero() {
 		return evt.LastTimestamp.Time
@@ -96,93 +199,9 @@ func getEventTime(evt *corev1.Event) time.Time {
 	return evt.CreationTimestamp.Time
 }
 
-// clusterMessages groups similar messages using Jaro-Winkler similarity.
-// Returns EventClusters ready for display.
-func clusterMessages(group *groupData, threshold float64, eventType, reason string) []EventCluster {
-	if len(group.messages) == 0 {
-		return nil
-	}
-
-	type clusterData struct {
-		count    int
-		lastSeen time.Time
-	}
-	clusters := make(map[string]*clusterData)
-
-	for i, msg := range group.messages {
-		truncatedMsg := truncateMessage(msg)
-		msgTime := group.times[i]
-
-		bestMatch := ""
-		bestSimilarity := 0.0
-
-		// Find the most similar existing cluster
-		for existing := range clusters {
-			similarity := stringSimilarity(truncatedMsg, existing)
-			if similarity >= threshold && similarity > bestSimilarity {
-				bestMatch = existing
-				bestSimilarity = similarity
-			}
-		}
-
-		if bestMatch != "" {
-			clusters[bestMatch].count++
-			if msgTime.After(clusters[bestMatch].lastSeen) {
-				clusters[bestMatch].lastSeen = msgTime
-			}
-		} else {
-			clusters[truncatedMsg] = &clusterData{count: 1, lastSeen: msgTime}
-		}
-	}
-
-	// Build EventClusters
-	result := make([]EventCluster, 0, len(clusters))
-	for msg, data := range clusters {
-		lookAlikeCount := 0
-		if data.count > 1 {
-			lookAlikeCount = data.count - 1
-		}
-		result = append(result, EventCluster{
-			Type:           eventType,
-			Reason:         reason,
-			Message:        msg,
-			LookAlikeCount: lookAlikeCount,
-			LastSeen:       data.lastSeen,
-		})
-	}
-
-	return result
-}
-
-// truncateMessage shortens a message to maxMessageLength, adding ellipsis if truncated.
-// Also sanitizes by replacing newlines with spaces.
-func truncateMessage(msg string) string {
+// sanitizeMessage normalizes whitespace.
+func sanitizeMessage(msg string) string {
 	msg = strings.ReplaceAll(msg, "\n", " ")
 	msg = strings.ReplaceAll(msg, "\r", " ")
-
-	if len(msg) <= maxMessageLength {
-		return msg
-	}
-	return msg[:maxMessageLength-3] + "..."
-}
-
-// stringSimilarity calculates normalized similarity between two strings.
-// Returns value between 0 (completely different) and 1 (identical).
-// Strings should be pre-truncated for consistent comparison.
-//
-// Uses Jaro-Winkler algorithm which gives more weight to common prefixes.
-// This is ideal for K8s event messages which typically share a common prefix
-// (e.g., "Successfully assigned default/nginx-xxx to node-yyy") with varying
-// suffixes (pod names, node names).
-func stringSimilarity(a, b string) float64 {
-	if a == b {
-		return 1.0
-	}
-
-	if len(a) == 0 || len(b) == 0 {
-		return 0.0
-	}
-
-	// JaroWinkler with extended prefix size for K8s messages
-	return smetrics.JaroWinkler(a, b, 0.7, 20)
+	return msg
 }

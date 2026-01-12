@@ -19,7 +19,4 @@ const (
 	// Parsing constants
 	parseIntBase10 = 10 // Decimal base for string to int conversion
 	parseIntBits64 = 64 // 64-bit integer size for parsing
-
-	// Display formatting
-	tablePaddingSpaces = 3 // Column padding in tabwriter output
 )

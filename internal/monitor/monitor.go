@@ -3,15 +3,12 @@
 // Architecture (MVC Pattern):
 //   - Controller: Orchestrates monitoring logic and state management
 //   - View: Presentation layer interface (see view.go)
-//   - ConsoleView: Terminal implementation with Renderer + TerminalController
-//   - Renderer: Output formatting and display (see renderer.go)
 //   - DeploymentRepository: Data access layer for Kubernetes API (see repository.go)
 //   - Types: Domain models and DTOs (see types.go)
-//   - Metrics: Business logic for rollout calculations (see metrics.go)
 //
 // Data Flow:
 //
-//	Repository (K8s API) → Controller → Model (RolloutSnapshot) → View (ConsoleView)
+//	Repository (K8s API) → Controller → Model (RolloutSnapshot) → View
 package monitor
 
 import (
@@ -19,6 +16,8 @@ import (
 	"fmt"
 	"os"
 	"time"
+
+	"github.com/ivoronin/kubectl-watch-rollout/internal/tui"
 )
 
 // Controller handles deployment rollout monitoring (Controller layer).
@@ -35,7 +34,7 @@ func New(repo *DeploymentRepository, deploymentName string) (*Controller, error)
 	return NewWithConfig(repo, deploymentName, DefaultConfig())
 }
 
-// NewWithConfig creates a new Controller instance with custom configuration
+// NewWithConfig creates a new Controller instance with custom configuration.
 func NewWithConfig(repo *DeploymentRepository, deploymentName string, config Config) (*Controller, error) {
 	if repo == nil {
 		return nil, fmt.Errorf("internal error: repository is required")
@@ -44,12 +43,11 @@ func NewWithConfig(repo *DeploymentRepository, deploymentName string, config Con
 		return nil, fmt.Errorf("deployment name is required")
 	}
 
-	// Select view based on configuration
 	var view View
 	if config.LineMode {
 		view = NewLineView(config, os.Stdout)
 	} else {
-		view = NewConsoleView(config, os.Stdout)
+		view = tui.NewView()
 	}
 
 	return &Controller{
@@ -88,6 +86,8 @@ func (c *Controller) Run(ctx context.Context) error {
 		select {
 		case <-ctx.Done():
 			return fmt.Errorf("monitoring cancelled")
+		case <-c.view.Done():
+			return nil // User quit via TUI
 		case <-ticker.C:
 		}
 	}
