@@ -32,6 +32,7 @@ func NewModel() Model {
 	s := spinner.New()
 	s.Spinner = spinner.Dot
 	s.Style = lipgloss.NewStyle().Foreground(ColorGreen)
+
 	return Model{
 		spinner:        s,
 		keys:           keys,
@@ -61,6 +62,7 @@ func (m Model) Update(teaMsg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.KeyMsg:
 		if key.Matches(t, m.keys.Quit) {
 			m.quitting = true
+
 			return m, tea.Quit
 		}
 
@@ -78,6 +80,7 @@ func (m Model) Update(teaMsg tea.Msg) (tea.Model, tea.Cmd) {
 	case spinner.TickMsg:
 		if !m.hasData {
 			var cmd tea.Cmd
+
 			m.spinner, cmd = m.spinner.Update(teaMsg)
 			cmds = append(cmds, cmd)
 		}
@@ -96,6 +99,7 @@ func (m Model) Update(teaMsg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case QuitMsg:
 		m.quitting = true
+
 		return m, tea.Quit
 	}
 
@@ -107,9 +111,11 @@ func (m Model) View() string {
 	if m.quitting {
 		return ""
 	}
+
 	if m.width == 0 || m.height == 0 {
 		return ""
 	}
+
 	if !m.hasData {
 		return lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center,
 			m.spinner.View()+"Loading...")

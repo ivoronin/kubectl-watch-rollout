@@ -39,20 +39,25 @@ var (
 
 // Layout constants.
 const (
-	// Fixed row heights
-	StatusbarH = 1 // statusbar height (content only, progress bar acts as border)
-	ProgressH  = 1 // progress bar height
+	// StatusbarH is the statusbar height (content only, progress bar acts as border).
+	StatusbarH = 1
+	// ProgressH is the progress bar height.
+	ProgressH = 1
 
-	// Rollout info
-	RolloutLabelColW  = 10
+	// RolloutLabelColW is the rollout info label column width.
+	RolloutLabelColW = 10
+	// RolloutColPadding is the rollout info column padding.
 	RolloutColPadding = 2
 
-	// Pod stats
-	PodsStateColW  = 9
+	// PodsStateColW is the pod stats column width.
+	PodsStateColW = 9
+	// PodsColPadding is the pod stats column padding.
 	PodsColPadding = 2
 
-	// Events table
-	EventsMinColW    = 10
-	EventsLastColW   = 10
-	EventsColPadding = 2 // padding between columns (4 gaps for 5 columns)
+	// EventsMinColW is the minimum events table column width.
+	EventsMinColW = 10
+	// EventsLastColW is the events "last seen" column width.
+	EventsLastColW = 10
+	// EventsColPadding is the events table column padding.
+	EventsColPadding = 2
 )

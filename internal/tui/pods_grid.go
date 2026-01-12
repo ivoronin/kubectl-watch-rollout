@@ -36,6 +36,7 @@ func (m *PodsGrid) Update(teaMsg tea.Msg) tea.Cmd {
 	if s, ok := teaMsg.(SnapshotMsg); ok {
 		m.snapshot = s.Snapshot
 	}
+
 	return nil
 }
 
@@ -48,10 +49,7 @@ func (m *PodsGrid) View() string {
 	// Build title with legend on right
 	left := "Pods"
 	legend := symbolAvailable + " AVAILABLE  " + symbolReady + " READY  " + symbolCurrent + " RUNNING"
-	gap := m.width - lipgloss.Width(left) - lipgloss.Width(legend)
-	if gap < 1 {
-		gap = 1
-	}
+	gap := max(1, m.width-lipgloss.Width(left)-lipgloss.Width(legend))
 	titleLine := left + strings.Repeat(" ", gap) + legend
 	title := sectionTitleStyle.Width(m.width).Render(titleLine)
 
@@ -64,7 +62,8 @@ func (m *PodsGrid) View() string {
 	oldCurrent := int(m.snapshot.OldRS.Current) - int(m.snapshot.OldRS.Ready)
 
 	// Build symbol sequence: NEW (avail, ready, current) then OLD (avail, ready, current)
-	var symbols []string
+	totalPods := newAvail + newReady + newCurrent + oldAvail + oldReady + oldCurrent
+	symbols := make([]string, 0, totalPods)
 	symbols = append(symbols, repeat(newPodStyle.Render(symbolAvailable), newAvail)...)
 	symbols = append(symbols, repeat(newPodStyle.Render(symbolReady), newReady)...)
 	symbols = append(symbols, repeat(newPodStyle.Render(symbolCurrent), newCurrent)...)
@@ -83,11 +82,9 @@ func (m *PodsGrid) View() string {
 	}
 
 	var lines []string
+
 	for i := 0; i < len(symbols); i += symbolsPerLine {
-		end := i + symbolsPerLine
-		if end > len(symbols) {
-			end = len(symbols)
-		}
+		end := min(i+symbolsPerLine, len(symbols))
 		lines = append(lines, strings.Join(symbols[i:end], " "))
 	}
 
@@ -98,9 +95,11 @@ func repeat(s string, n int) []string {
 	if n <= 0 {
 		return nil
 	}
+
 	result := make([]string, n)
 	for i := range result {
 		result[i] = s
 	}
+
 	return result
 }

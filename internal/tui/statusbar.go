@@ -23,6 +23,7 @@ type Statusbar struct {
 func NewStatusbar(keys help.KeyMap) *Statusbar {
 	h := help.New()
 	h.ShowAll = false
+
 	return &Statusbar{help: h, keys: keys}
 }
 
@@ -31,10 +32,10 @@ func (m *Statusbar) SetWidth(w int) { m.width = w }
 
 // Update handles messages.
 func (m *Statusbar) Update(teaMsg tea.Msg) tea.Cmd {
-	switch t := teaMsg.(type) {
-	case SnapshotMsg:
+	if t, ok := teaMsg.(SnapshotMsg); ok {
 		m.deploymentName = t.Snapshot.DeploymentName
 	}
+
 	return nil
 }
 
@@ -42,11 +43,9 @@ func (m *Statusbar) Update(teaMsg tea.Msg) tea.Cmd {
 func (m *Statusbar) View() string {
 	left := statusbarTextStyle.Render("Watching rollout for deployment ") + statusbarNameStyle.Render(m.deploymentName)
 	right := statusbarTextStyle.Render(m.help.View(m.keys))
-	gap := m.width - lipgloss.Width(left) - lipgloss.Width(right)
-	if gap < 0 {
-		gap = 0
-	}
+	gap := max(0, m.width-lipgloss.Width(left)-lipgloss.Width(right))
 	content := left + lipgloss.NewStyle().Width(gap).Render("") + right
+
 	return lipgloss.NewStyle().
 		Width(m.width).
 		Render(content)

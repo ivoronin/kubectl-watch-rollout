@@ -1,7 +1,6 @@
-// Package monitor provides Kubernetes deployment rollout monitoring functionality.
-//
-// This file contains line mode rendering logic for CI/CD-friendly output.
 package monitor
+
+// This file contains line mode rendering logic for CI/CD-friendly output.
 
 import (
 	"fmt"
@@ -34,16 +33,16 @@ func NewLineRenderer(config Config, output io.Writer) *LineRenderer {
 // RenderSnapshot outputs a single timestamped status line followed by any events
 func (r *LineRenderer) RenderSnapshot(snapshot *types.RolloutSnapshot) {
 	statusLine := r.formatStatusLine(snapshot)
-	fmt.Fprintln(r.output, statusLine)
+	fmt.Fprintln(r.output, statusLine) //nolint:errcheck // stdout write errors not actionable
 
 	// Render events if any
 	eventLines := r.formatEvents(snapshot.Events)
 	for _, line := range eventLines {
-		fmt.Fprintln(r.output, line)
+		fmt.Fprintln(r.output, line) //nolint:errcheck // stdout write errors not actionable
 	}
 
 	// Add blank line for visual separation
-	fmt.Fprintln(r.output)
+	fmt.Fprintln(r.output) //nolint:errcheck // stdout write errors not actionable
 }
 
 // formatTimestamp returns compact local time (HH:MM:SS)
@@ -60,7 +59,10 @@ func (r *LineRenderer) formatStatusLine(snapshot *types.RolloutSnapshot) string 
 	replicas := r.formatReplicaCounts(snapshot)
 	metadata := r.formatMetadata(snapshot)
 
-	return fmt.Sprintf("%s %s [REPLICASET %s] [ROLLOUT %s] %s %s", timestamp, symbol, snapshot.NewRSName, status, replicas, metadata)
+	return fmt.Sprintf(
+		"%s %s [REPLICASET %s] [ROLLOUT %s] %s %s",
+		timestamp, symbol, snapshot.NewRSName, status, replicas, metadata,
+	)
 }
 
 // formatSymbol returns a visual symbol for the rollout status
@@ -104,12 +106,14 @@ func (r *LineRenderer) formatMetadata(snapshot *types.RolloutSnapshot) string {
 	// Show actual completion duration if rollout is done and we have ProgressUpdateTime
 	if snapshot.Status.IsDone() {
 		elapsed := snapshot.ProgressUpdateTime.Sub(snapshot.StartTime)
+
 		return fmt.Sprintf("[DUR %s]", types.FormatDuration(elapsed))
 	}
 
 	// Show ETA if available
 	if snapshot.EstimatedCompletion != nil {
 		remaining := time.Until(*snapshot.EstimatedCompletion)
+
 		return fmt.Sprintf("[ETA %s]", types.FormatDuration(remaining))
 	}
 
@@ -124,6 +128,7 @@ func (r *LineRenderer) formatEvents(report types.EventSummary) []string {
 	}
 
 	var result []string
+
 	for _, c := range report.Clusters {
 		age := types.FormatDuration(time.Since(c.LastSeen)) + " ago"
 		msg := truncateMessage(c.Message, maxMessageLength)
@@ -144,8 +149,10 @@ func truncateMessage(msg string, maxLen int) string {
 	if len(msg) <= maxLen {
 		return msg
 	}
+
 	if maxLen <= 3 {
 		return msg[:maxLen]
 	}
+
 	return msg[:maxLen-3] + "..."
 }

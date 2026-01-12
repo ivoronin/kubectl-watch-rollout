@@ -26,6 +26,7 @@ func NewView() *View {
 	// Start TUI in background goroutine
 	go func() {
 		defer close(done)
+
 		_, _ = program.Run()
 	}()
 

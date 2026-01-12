@@ -1,3 +1,4 @@
+// Package monitor provides Kubernetes deployment rollout monitoring functionality.
 package monitor
 
 import (
@@ -42,8 +43,8 @@ type Config struct {
 	MaxEvents           int
 	ProgressBarWidth    int
 	SimilarityThreshold float64        // Controls event clustering (0.0-1.0, lower = more aggressive)
-	UntilComplete       bool           // If true, exit after monitoring one rollout (default: false, continuous monitoring)
-	LineMode            bool           // If true, use line-based output for CI/CD (default: false, TUI mode)
+	UntilComplete       bool           // Exit after monitoring one rollout (default: continuous)
+	LineMode            bool           // Use line-based output for CI/CD (default: TUI mode)
 	IgnoreEvents        *regexp.Regexp // Regex to filter out events by "Reason: Message"
 }
 
@@ -79,7 +80,7 @@ func isDeploymentFailed(status appsv1.DeploymentStatus) bool {
 
 // CalculateRolloutStatus determines rollout status from deployment conditions.
 // Returns Complete if fully available, DeadlineExceeded if failed, otherwise Progressing.
-func CalculateRolloutStatus(deployment *appsv1.Deployment, newRS *appsv1.ReplicaSet) types.RolloutStatus {
+func CalculateRolloutStatus(deployment *appsv1.Deployment) types.RolloutStatus {
 	status := deployment.Status
 
 	if isDeploymentComplete(status) {
@@ -95,7 +96,12 @@ func CalculateRolloutStatus(deployment *appsv1.Deployment, newRS *appsv1.Replica
 
 // hasCondition checks if a specific condition exists with given type and status.
 // If reason is empty, only type/status checked. If provided, all three must match.
-func hasCondition(status appsv1.DeploymentStatus, condType appsv1.DeploymentConditionType, condStatus corev1.ConditionStatus, reason string) bool {
+func hasCondition(
+	status appsv1.DeploymentStatus,
+	condType appsv1.DeploymentConditionType,
+	condStatus corev1.ConditionStatus,
+	reason string,
+) bool {
 	for _, c := range status.Conditions {
 		if c.Type == condType && c.Status == condStatus {
 			if reason == "" || c.Reason == reason {
@@ -103,6 +109,7 @@ func hasCondition(status appsv1.DeploymentStatus, condType appsv1.DeploymentCond
 			}
 		}
 	}
+
 	return false
 }
 
@@ -111,5 +118,6 @@ func getInt32OrDefault(val *int32, defaultVal int32) int32 {
 	if val == nil {
 		return defaultVal
 	}
+
 	return *val
 }

@@ -1,18 +1,16 @@
-// Package monitor provides Kubernetes deployment rollout monitoring functionality.
-//
+package monitor
+
 // Architecture (MVC Pattern):
 //   - Controller: Orchestrates monitoring logic and state management
 //   - View: Presentation layer interface (see view.go)
 //   - DeploymentRepository: Data access layer for Kubernetes API (see repository.go)
 //   - Types: Domain models and DTOs (see types.go)
 //
-// Data Flow:
-//
-//	Repository (K8s API) → Controller → Model (RolloutSnapshot) → View
-package monitor
+// Data Flow: Repository (K8s API) → Controller → Model (RolloutSnapshot) → View
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"time"
@@ -37,10 +35,11 @@ func New(repo *DeploymentRepository, deploymentName string) (*Controller, error)
 // NewWithConfig creates a new Controller instance with custom configuration.
 func NewWithConfig(repo *DeploymentRepository, deploymentName string, config Config) (*Controller, error) {
 	if repo == nil {
-		return nil, fmt.Errorf("internal error: repository is required")
+		return nil, errors.New("internal error: repository is required")
 	}
+
 	if deploymentName == "" {
-		return nil, fmt.Errorf("deployment name is required")
+		return nil, errors.New("deployment name is required")
 	}
 
 	var view View
@@ -63,6 +62,7 @@ func (c *Controller) Run(ctx context.Context) error {
 	defer c.view.Shutdown()
 
 	pollInterval := time.Duration(c.config.PollIntervalSeconds) * time.Second
+
 	ticker := time.NewTicker(pollInterval)
 	defer ticker.Stop()
 
@@ -78,6 +78,7 @@ func (c *Controller) Run(ctx context.Context) error {
 				if result.Failed {
 					return ErrProgressDeadlineExceeded
 				}
+
 				return nil
 			}
 			// Default: continuous monitoring - continue loop
@@ -85,7 +86,7 @@ func (c *Controller) Run(ctx context.Context) error {
 
 		select {
 		case <-ctx.Done():
-			return fmt.Errorf("monitoring cancelled")
+			return errors.New("monitoring cancelled")
 		case <-c.view.Done():
 			return nil // User quit via TUI
 		case <-ticker.C:

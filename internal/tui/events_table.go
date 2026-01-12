@@ -2,6 +2,7 @@ package tui
 
 import (
 	"fmt"
+	"strconv"
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -29,10 +30,10 @@ func (m *EventsTable) SetWidth(w int) { m.width = w }
 
 // Update handles messages.
 func (m *EventsTable) Update(teaMsg tea.Msg) tea.Cmd {
-	switch t := teaMsg.(type) {
-	case SnapshotMsg:
+	if t, ok := teaMsg.(SnapshotMsg); ok {
 		m.snapshot = t.Snapshot
 	}
+
 	return nil
 }
 
@@ -42,32 +43,14 @@ func (m *EventsTable) View() string {
 		return ""
 	}
 
-	// Build title with stats on right
-	totalEvents := 0
-	for _, c := range m.snapshot.Events.Clusters {
-		totalEvents += c.ExemplarCount
-	}
-	stats := fmt.Sprintf("TOTAL %d  IGNORED %d", totalEvents, m.snapshot.Events.IgnoredCount)
-	titleContent := "Events" + lipgloss.PlaceHorizontal(m.width-lipgloss.Width("Events"), lipgloss.Right, stats)
-	title := sectionTitleStyle.Width(m.width).Render(titleContent)
+	title := m.buildEventsTitle()
 
 	events := m.snapshot.Events.Clusters
 	if len(events) == 0 {
 		return title + "\n" + TableLabelStyle.Render("No events")
 	}
 
-	// Format cell data
-	type row struct{ eventType, reason, message, similar, last string }
-	rows := make([]row, len(events))
-	for i, e := range events {
-		rows[i] = row{
-			eventType: formatEventType(e.Type),
-			reason:    e.Reason,
-			message:   e.Message,
-			similar:   formatExemplars(e.ExemplarCount),
-			last:      types.FormatDuration(time.Since(e.LastSeen)),
-		}
-	}
+	rows := formatEventRows(events)
 
 	// Calculate column widths
 	reasonW, similarW := EventsMinColW, EventsMinColW
@@ -75,13 +58,11 @@ func (m *EventsTable) View() string {
 		reasonW = max(reasonW, len(r.reason))
 		similarW = max(similarW, len(r.similar))
 	}
+
 	msgW := max(EventsMinColW, m.width-RolloutLabelColW-reasonW-similarW-EventsLastColW-4*EventsColPadding)
 	colWidths := []int{
-		RolloutLabelColW + EventsColPadding,
-		reasonW + EventsColPadding,
-		msgW + EventsColPadding,
-		similarW + EventsColPadding,
-		EventsLastColW,
+		RolloutLabelColW + EventsColPadding, reasonW + EventsColPadding,
+		msgW + EventsColPadding, similarW + EventsColPadding, EventsLastColW,
 	}
 
 	// Build table rows
@@ -100,9 +81,11 @@ func (m *EventsTable) View() string {
 			if col >= 3 {
 				style = style.Align(lipgloss.Right)
 			}
+
 			if row == table.HeaderRow {
 				return style.Inherit(TableHeaderStyle)
 			}
+
 			return style
 		}).
 		Render()
@@ -110,13 +93,50 @@ func (m *EventsTable) View() string {
 	return title + "\n" + tbl
 }
 
+// buildEventsTitle creates the section title with event stats.
+func (m *EventsTable) buildEventsTitle() string {
+	totalEvents := 0
+	for _, c := range m.snapshot.Events.Clusters {
+		totalEvents += c.ExemplarCount
+	}
+
+	stats := fmt.Sprintf("TOTAL %d  IGNORED %d", totalEvents, m.snapshot.Events.IgnoredCount)
+	titleContent := "Events" + lipgloss.PlaceHorizontal(m.width-lipgloss.Width("Events"), lipgloss.Right, stats)
+
+	return sectionTitleStyle.Width(m.width).Render(titleContent)
+}
+
+// eventRow holds formatted data for a single event row.
+type eventRow struct {
+	eventType, reason, message, similar, last string
+}
+
+// formatEventRows converts event clusters to formatted row data.
+func formatEventRows(events []types.EventCluster) []eventRow {
+	rows := make([]eventRow, len(events))
+
+	for i, e := range events {
+		rows[i] = eventRow{
+			eventType: formatEventType(e.Type),
+			reason:    e.Reason,
+			message:   e.Message,
+			similar:   formatExemplars(e.ExemplarCount),
+			last:      types.FormatDuration(time.Since(e.LastSeen)),
+		}
+	}
+
+	return rows
+}
+
 func truncateStr(s string, maxW int) string {
 	if len(s) <= maxW {
 		return s
 	}
+
 	if maxW <= 3 {
 		return s[:maxW]
 	}
+
 	return s[:maxW-3] + "..."
 }
 
@@ -124,9 +144,10 @@ func formatEventType(t string) string {
 	if t == "Warning" {
 		return eventsWarningStyle.Render("Warning")
 	}
+
 	return eventsNormalStyle.Render("Normal")
 }
 
 func formatExemplars(count int) string {
-	return fmt.Sprintf("%d", count)
+	return strconv.Itoa(count)
 }

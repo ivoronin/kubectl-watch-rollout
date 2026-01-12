@@ -1,7 +1,6 @@
-// Package monitor provides Kubernetes deployment rollout monitoring functionality.
-//
-// This file contains the LineView implementation for CI/CD-friendly output.
 package monitor
+
+// This file contains the LineView implementation for CI/CD-friendly output.
 
 import (
 	"io"

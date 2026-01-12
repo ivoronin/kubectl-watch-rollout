@@ -30,6 +30,7 @@ func (m *RolloutInfo) Update(teaMsg tea.Msg) tea.Cmd {
 	if s, ok := teaMsg.(SnapshotMsg); ok {
 		m.snapshot = s.Snapshot
 	}
+
 	return nil
 }
 
@@ -38,12 +39,14 @@ func (m *RolloutInfo) View() string {
 	if m.snapshot == nil {
 		return ""
 	}
+
 	s := m.snapshot
+
 	return strings.Join([]string{
 		deploymentRow("Status", renderDeploymentStatus(s.Status)),
 		deploymentRow("ReplicaSet", s.NewRSName),
 		deploymentRow("Strategy", fmt.Sprintf("%s (Unavailable %s, Surge %s)", s.StrategyType, s.MaxUnavailable, s.MaxSurge)),
-		deploymentRow("Started", fmt.Sprintf("%s (%s ago)", s.StartTime.Format("15:04:05"), types.FormatDuration(time.Since(s.StartTime)))),
+		deploymentRow("Started", formatStartedValue(s)),
 		deploymentRow(deploymentETALabel(s), deploymentETAValue(s)),
 	}, "\n")
 }
@@ -52,21 +55,28 @@ func deploymentRow(label, value string) string {
 	return deploymentLabelStyle.Render(label) + strings.Repeat(" ", RolloutLabelColW-len(label)+RolloutColPadding) + value
 }
 
+func formatStartedValue(s *types.RolloutSnapshot) string {
+	return fmt.Sprintf("%s (%s ago)", s.StartTime.Format("15:04:05"), types.FormatDuration(time.Since(s.StartTime)))
+}
+
 func renderDeploymentStatus(status types.RolloutStatus) string {
 	switch status {
 	case types.StatusComplete:
 		return deploymentCompleteStyle.Render("Complete")
 	case types.StatusDeadlineExceeded:
 		return deploymentFailedStyle.Render("Deadline Exceeded")
-	default:
+	case types.StatusProgressing:
 		return deploymentProgressStyle.Render("Progressing")
 	}
+
+	return deploymentProgressStyle.Render("Progressing")
 }
 
 func deploymentETALabel(s *types.RolloutSnapshot) string {
 	if s.Status == types.StatusComplete || s.Status == types.StatusDeadlineExceeded {
 		return "Duration"
 	}
+
 	return "ETA"
 }
 
@@ -80,6 +90,7 @@ func deploymentETAValue(s *types.RolloutSnapshot) string {
 		if rem := time.Until(*s.EstimatedCompletion); rem > 0 {
 			return fmt.Sprintf("~%s remaining", types.FormatDuration(rem))
 		}
+
 		return "any moment..."
 	default:
 		return "Calculating..."

@@ -1,74 +1,44 @@
 version: "2"
 
-run:
-  timeout: 5m
-  tests: true
-  modules-download-mode: readonly
-
 linters:
-  default: standard
-  enable:
-    # Additional useful linters beyond standard
-    - revive        # Fast, configurable linter
-    - misspell      # Finds commonly misspelled English words
-    - unconvert     # Remove unnecessary type conversions
-    - unparam       # Find unused function parameters
-    - gosec         # Security-focused linter
-    - bodyclose     # Check HTTP response body is closed
-    - nilerr        # Find code returning nil even if it checks error
-    - errname       # Check error naming conventions
-    - errorlint     # Find code that will cause problems with Go 1.13 error wrapping
+  # Enable ALL linters by default, disable only those that don't apply
+  default: all
+
+  disable:
+    # Deprecated linters
+    - wsl               # Replaced by wsl_v5
+
+    # Don't apply to this project
+    - depguard          # Requires allowlist config - not useful for small CLI
+    - gochecknoglobals  # We use globals for version, styles, patterns
+    - exhaustruct       # Too strict - not all struct fields need initialization
+    - ireturn           # "Return concrete types" - doesn't apply to View interface pattern
+    - gosmopolitan      # i18n checks - not needed for CLI tool
+
+    # Too opinionated / style preferences
+    - varnamelen        # Variable name length limits
+    - godot             # Period at end of comments
+
+    # Noise for TUI/CLI code
+    - mnd               # Magic numbers - TUI has many dimension constants
+
+    # False positives / not useful
+    - durationcheck     # False positive on h * time.Hour pattern
+    - err113            # Too strict - dynamic errors with context are fine for CLI
 
   exclusions:
     rules:
-      # Exclude some linters from running on tests files
+      # Exclude some linters from test files
       - path: _test\.go
         linters:
           - gosec
           - errcheck
+          - err113
+          - forcetypeassert
 
-      # Renderer and TerminalController write to stdout/stderr - errors not actionable in CLI tool
-      - path: internal/monitor/renderer\.go
-        linters:
-          - errcheck
-      - path: internal/monitor/terminal\.go
-        linters:
-          - errcheck
-      - path: internal/monitor/line_renderer\.go
-        linters:
-          - errcheck
-
-  settings:
-    errcheck:
-      check-type-assertions: true
-      check-blank: false
-
-    govet:
-      enable-all: true
-      disable:
-        - shadow        # Too noisy for this codebase
-        - fieldalignment # Struct field order optimization - not critical for CLI tool
-
-    revive:
-      rules:
-        - name: exported
-          disabled: false
-        - name: unexported-return
-          disabled: true
-        - name: var-naming
-          disabled: false
-        - name: package-comments
-          disabled: true
-
-    gosec:
-      excludes:
-        - G104  # Audit errors not checked (covered by errcheck)
+  settings: {}
 
 formatters:
   enable:
-    - gofmt         # Check code formatting
-    - goimports     # Check import formatting
-
-issues:
-  max-issues-per-linter: 0
-  max-same-issues: 0
+    - gofmt
+    - goimports

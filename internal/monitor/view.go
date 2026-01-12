@@ -1,7 +1,6 @@
-// Package monitor provides Kubernetes deployment rollout monitoring functionality.
-//
-// This file contains the view layer interface for rendering rollout status.
 package monitor
+
+// This file contains the view layer interface for rendering rollout status.
 
 import "github.com/ivoronin/kubectl-watch-rollout/internal/types"
 

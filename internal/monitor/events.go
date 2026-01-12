@@ -1,7 +1,6 @@
-// Package monitor provides Kubernetes deployment rollout monitoring functionality.
-//
-// This file contains event processing logic using the Drain log parsing algorithm.
 package monitor
+
+// This file contains event processing logic using the Drain log parsing algorithm.
 
 import (
 	"regexp"
@@ -55,6 +54,7 @@ func SummarizeEvents(events []corev1.Event, ignoreRegex *regexp.Regexp, threshol
 
 	// Group by Type+Reason, apply ignore filter
 	type typeReasonKey struct{ Type, Reason string }
+
 	groups := make(map[typeReasonKey][]eventData)
 	ignoredCount := 0
 
@@ -63,9 +63,11 @@ func SummarizeEvents(events []corev1.Event, ignoreRegex *regexp.Regexp, threshol
 			fullMsg := event.Reason + ": " + event.Message
 			if ignoreRegex.MatchString(fullMsg) {
 				ignoredCount++
+
 				continue
 			}
 		}
+
 		key := typeReasonKey{Type: event.Type, Reason: event.Reason}
 		groups[key] = append(groups[key], eventData{
 			message: event.Message,
@@ -79,6 +81,7 @@ func SummarizeEvents(events []corev1.Event, ignoreRegex *regexp.Regexp, threshol
 
 	// Cluster each group using Drain
 	var result []types.EventCluster
+
 	for key, group := range groups {
 		clusters := clusterWithDrain(group, threshold, key.Type, key.Reason)
 		result = append(result, clusters...)
@@ -89,9 +92,11 @@ func SummarizeEvents(events []corev1.Event, ignoreRegex *regexp.Regexp, threshol
 		if result[i].Type != result[j].Type {
 			return result[i].Type == corev1.EventTypeWarning
 		}
+
 		if result[i].ExemplarCount != result[j].ExemplarCount {
 			return result[i].ExemplarCount > result[j].ExemplarCount
 		}
+
 		return result[i].Reason < result[j].Reason
 	})
 
@@ -117,6 +122,7 @@ func clusterWithDrain(events []eventData, threshold float64, eventType, reason s
 		cluster *drain.LogCluster
 		time    time.Time
 	}
+
 	trained := make([]trainedEvent, len(events))
 
 	for i, evt := range events {
@@ -163,10 +169,12 @@ func clusterWithDrain(events []eventData, threshold float64, eventType, reason s
 // Output: "template content here"
 func extractTemplate(s string) string {
 	const sep = " : "
+
 	idx := strings.LastIndex(s, sep)
 	if idx == -1 {
 		return s
 	}
+
 	return s[idx+len(sep):]
 }
 
@@ -175,6 +183,7 @@ func maskMessage(msg string) string {
 	for _, p := range defaultMaskPatterns {
 		msg = p.pattern.ReplaceAllString(msg, p.token)
 	}
+
 	return msg
 }
 
@@ -183,9 +192,11 @@ func getEventTime(evt *corev1.Event) time.Time {
 	if !evt.LastTimestamp.IsZero() {
 		return evt.LastTimestamp.Time
 	}
+
 	if !evt.EventTime.IsZero() {
 		return evt.EventTime.Time
 	}
+
 	return evt.CreationTimestamp.Time
 }
 
@@ -193,5 +204,6 @@ func getEventTime(evt *corev1.Event) time.Time {
 func sanitizeMessage(msg string) string {
 	msg = strings.ReplaceAll(msg, "\n", " ")
 	msg = strings.ReplaceAll(msg, "\r", " ")
+
 	return msg
 }

@@ -1,5 +1,6 @@
-// Package tui provides a bubbletea-based terminal UI for monitoring rollouts.
 package tui
+
+// This file contains message types for bubbletea communication.
 
 import (
 	"time"

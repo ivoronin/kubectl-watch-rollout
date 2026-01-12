@@ -31,14 +31,17 @@ func (m *ProgressBar) Update(teaMsg tea.Msg) tea.Cmd {
 	switch t := teaMsg.(type) {
 	case SnapshotMsg:
 		m.hasData = true
+
 		return m.bar.SetPercent(float64(t.Snapshot.NewProgress))
 	case progress.FrameMsg:
 		model, cmd := m.bar.Update(t)
 		if bar, ok := model.(progress.Model); ok {
 			m.bar = bar
 		}
+
 		return cmd
 	}
+
 	return nil
 }
 
@@ -47,6 +50,8 @@ func (m *ProgressBar) View() string {
 	if !m.hasData {
 		return ""
 	}
+
 	m.bar.Width = m.width
+
 	return m.bar.View()
 }

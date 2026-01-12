@@ -51,6 +51,7 @@ func (e EventCluster) Symbol() string {
 	if e.Type == corev1.EventTypeWarning {
 		return "⚠"
 	}
+
 	return "ℹ"
 }
 
@@ -114,11 +115,14 @@ func FormatDuration(d time.Duration) string {
 			if s > 0 {
 				return fmt.Sprintf("%dh%dm%ds", h, m, s)
 			}
+
 			return fmt.Sprintf("%dh%dm", h, m)
 		}
+
 		if s > 0 {
 			return fmt.Sprintf("%dh%ds", h, s)
 		}
+
 		return fmt.Sprintf("%dh", h)
 	}
 
@@ -126,6 +130,7 @@ func FormatDuration(d time.Duration) string {
 		if s > 0 {
 			return fmt.Sprintf("%dm%ds", m, s)
 		}
+
 		return fmt.Sprintf("%dm", m)
 	}
 
