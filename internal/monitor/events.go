@@ -13,33 +13,6 @@ import (
 	corev1 "k8s.io/api/core/v1"
 )
 
-// maskPattern defines a regex pattern and its semantic replacement token.
-type maskPattern struct {
-	pattern *regexp.Regexp
-	token   string
-}
-
-// Pre-compiled K8s masking patterns for clustering.
-// Order matters: more specific patterns first.
-var defaultMaskPatterns = []maskPattern{
-	// AWS ECR images (incl China): 123456789.dkr.ecr.region.amazonaws.com[.cn]/path/image:tag → <IMAGE>
-	{regexp.MustCompile(`\b\d+\.dkr\.ecr\.[a-z0-9-]+\.amazonaws\.com(?:\.cn)?/[a-zA-Z0-9/:._@-]+`), "<IMAGE>"},
-	// Namespace/pod paths: default/nginx-abc123-xyz → <NS>/<POD>
-	{regexp.MustCompile(`\b[a-z0-9-]+/[a-z0-9]+-[a-z0-9]{5,10}-[a-z0-9]{5}\b`), "<NS>/<POD>"},
-	// Pod names: nginx-deployment-abc123-xyz → <POD>
-	{regexp.MustCompile(`\b[a-z0-9]+-[a-z0-9]{5,10}-[a-z0-9]{5}\b`), "<POD>"},
-	// AWS EC2 node names: ip-172-28-129-199.ec2.internal → <NODE>
-	{regexp.MustCompile(`\bip-\d+-\d+-\d+-\d+\.[a-z0-9.-]+\.internal\b`), "<NODE>"},
-	// GKE node names: gke-cluster-default-pool-abc123 → <NODE>
-	{regexp.MustCompile(`\bgke-[a-z0-9-]+\b`), "<NODE>"},
-	// IP with port: 10.0.0.1:8080 → <IP:PORT>
-	{regexp.MustCompile(`\b\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}:\d+\b`), "<IP:PORT>"},
-	// IP without port: 10.0.0.1 → <IP>
-	{regexp.MustCompile(`\b\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}\b`), "<IP>"},
-	// UUIDs: 550e8400-e29b-41d4-a716-446655440000 → <UUID>
-	{regexp.MustCompile(`(?i)\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b`), "<UUID>"},
-}
-
 // eventData holds a single event's message and timestamp for clustering.
 type eventData struct {
 	message string
@@ -126,9 +99,8 @@ func clusterWithDrain(events []eventData, threshold float64, eventType, reason s
 	trained := make([]trainedEvent, len(events))
 
 	for i, evt := range events {
-		masked := maskMessage(sanitizeMessage(evt.message))
 		trained[i] = trainedEvent{
-			cluster: d.Train(masked),
+			cluster: d.Train(sanitizeMessage(evt.message)),
 			time:    evt.time,
 		}
 	}
@@ -176,15 +148,6 @@ func extractTemplate(s string) string {
 	}
 
 	return s[idx+len(sep):]
-}
-
-// maskMessage applies K8s-specific masking patterns for clustering.
-func maskMessage(msg string) string {
-	for _, p := range defaultMaskPatterns {
-		msg = p.pattern.ReplaceAllString(msg, p.token)
-	}
-
-	return msg
 }
 
 // getEventTime returns the best timestamp for an event.
