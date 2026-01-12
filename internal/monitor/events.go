@@ -41,10 +41,10 @@ var defaultMaskPatterns = []maskPattern{
 	{regexp.MustCompile(`(?i)\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b`), "<UUID>"},
 }
 
-// groupData holds messages and timestamps for clustering.
-type groupData struct {
-	messages []string
-	times    []time.Time
+// eventData holds a single event's message and timestamp for clustering.
+type eventData struct {
+	message string
+	time    time.Time
 }
 
 // SummarizeEvents processes K8s events into clustered summary.
@@ -55,7 +55,7 @@ func SummarizeEvents(events []corev1.Event, ignoreRegex *regexp.Regexp, threshol
 
 	// Group by Type+Reason, apply ignore filter
 	type typeReasonKey struct{ Type, Reason string }
-	groups := make(map[typeReasonKey]*groupData)
+	groups := make(map[typeReasonKey][]eventData)
 	ignoredCount := 0
 
 	for _, event := range events {
@@ -67,11 +67,10 @@ func SummarizeEvents(events []corev1.Event, ignoreRegex *regexp.Regexp, threshol
 			}
 		}
 		key := typeReasonKey{Type: event.Type, Reason: event.Reason}
-		if groups[key] == nil {
-			groups[key] = &groupData{}
-		}
-		groups[key].messages = append(groups[key].messages, event.Message)
-		groups[key].times = append(groups[key].times, getEventTime(&event))
+		groups[key] = append(groups[key], eventData{
+			message: event.Message,
+			time:    getEventTime(&event),
+		})
 	}
 
 	if len(groups) == 0 {
@@ -102,14 +101,9 @@ func SummarizeEvents(events []corev1.Event, ignoreRegex *regexp.Regexp, threshol
 	}
 }
 
-// clusterMeta tracks data for a cluster.
-type clusterMeta struct {
-	times []time.Time
-}
-
 // clusterWithDrain uses Drain algorithm to cluster similar messages.
-func clusterWithDrain(group *groupData, threshold float64, eventType, reason string) []types.EventCluster {
-	if len(group.messages) == 0 {
+func clusterWithDrain(events []eventData, threshold float64, eventType, reason string) []types.EventCluster {
+	if len(events) == 0 {
 		return nil
 	}
 
@@ -119,38 +113,34 @@ func clusterWithDrain(group *groupData, threshold float64, eventType, reason str
 	d := drain.New(config)
 
 	// Phase 1: Train all messages first (templates evolve as Drain learns)
-	type msgCluster struct {
+	type trainedEvent struct {
 		cluster *drain.LogCluster
 		time    time.Time
 	}
-	trained := make([]msgCluster, len(group.messages))
+	trained := make([]trainedEvent, len(events))
 
-	for i, msg := range group.messages {
-		masked := maskMessage(sanitizeMessage(msg))
-		trained[i] = msgCluster{
+	for i, evt := range events {
+		masked := maskMessage(sanitizeMessage(evt.message))
+		trained[i] = trainedEvent{
 			cluster: d.Train(masked),
-			time:    group.times[i],
+			time:    evt.time,
 		}
 	}
 
-	// Phase 2: Now read FINAL templates (after all learning is done)
-	// Use cluster pointer as key since template strings can change during training
-	clusterMetas := make(map[*drain.LogCluster]*clusterMeta)
+	// Phase 2: Group by final cluster (templates may have evolved during training)
+	clusterTimes := make(map[*drain.LogCluster][]time.Time)
 
-	for _, tc := range trained {
-		if clusterMetas[tc.cluster] == nil {
-			clusterMetas[tc.cluster] = &clusterMeta{}
-		}
-		clusterMetas[tc.cluster].times = append(clusterMetas[tc.cluster].times, tc.time)
+	for _, te := range trained {
+		clusterTimes[te.cluster] = append(clusterTimes[te.cluster], te.time)
 	}
 
-	// Phase 3: Build EventClusters with FINAL templates
-	result := make([]types.EventCluster, 0, len(clusterMetas))
+	// Phase 3: Build EventClusters with final templates
+	result := make([]types.EventCluster, 0, len(clusterTimes))
 
-	for cluster, meta := range clusterMetas {
+	for cluster, times := range clusterTimes {
 		// Find latest timestamp
 		var lastSeen time.Time
-		for _, t := range meta.times {
+		for _, t := range times {
 			if t.After(lastSeen) {
 				lastSeen = t
 			}
@@ -159,8 +149,8 @@ func clusterWithDrain(group *groupData, threshold float64, eventType, reason str
 		result = append(result, types.EventCluster{
 			Type:          eventType,
 			Reason:        reason,
-			Message:       extractTemplate(cluster.String()), // Read final evolved template
-			ExemplarCount: len(meta.times),
+			Message:       extractTemplate(cluster.String()),
+			ExemplarCount: len(times),
 			LastSeen:      lastSeen,
 		})
 	}
