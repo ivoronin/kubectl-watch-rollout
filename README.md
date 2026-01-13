@@ -8,24 +8,47 @@ Watch Kubernetes deployment rollouts with live progress updates and status track
 [Overview](#overview) · [Features](#features) · [Installation](#installation) · [Usage](#usage) · [Configuration](#configuration) · [Requirements](#requirements) · [License](#license)
 
 ```bash
-kubectl watch-rollout my-deployment -n production
+kubectl watch-rollout nginx-server
 ```
 
 ![Screenshot](https://raw.githubusercontent.com/ivoronin/kubectl-watch-rollout/master/screenshot.png)
 
+**CI/CD mode** — line output for Jenkins, GitHub Actions, GitLab CI, and other automation:
+
+```bash
+kubectl watch-rollout nginx-server --line-mode --until-complete
+```
+
+```
+09:40:21 ▶ [REPLICASET nginx-server-646b99584c] [ROLLOUT PROGRESSING] [NEW 5/100] [OLD 95/100] [ETA 5m15s]
+         └─ ℹ Created: Created container: nginx (10 exemplars, last 3s ago)
+         └─ ℹ Pulled: Container image "123456789012.dkr.ecr... (10 exemplars, last 3s ago)
+         └─ ℹ Scheduled: Successfully assigned <*> to <*> (10 exemplars, last 3s ago)
+         └─ ℹ Started: Started container nginx (10 exemplars, last 3s ago)
+
+09:40:36 ▶ [REPLICASET nginx-server-646b99584c] [ROLLOUT PROGRESSING] [NEW 10/100] [OLD 90/100] [ETA 4m44s]
+         └─ ℹ Created: Created container: nginx (15 exemplars, last 5s ago)
+         └─ ℹ Pulled: Container image "123456789012.dkr.ecr... (15 exemplars, last 5s ago)
+         └─ ℹ Scheduled: Successfully assigned <*> to <*> (15 exemplars, last 5s ago)
+         └─ ℹ Started: Started container nginx (15 exemplars, last 5s ago)
+
+...
+```
+
 ## Overview
 
-This kubectl plugin monitors deployment rollouts by polling the Kubernetes API every 5 seconds to track ReplicaSet transitions. It calculates rollout progress by comparing Available, Ready, and Current pod counts between old and new ReplicaSets. Warning events from pods are clustered using Jaro-Winkler similarity to reduce noise while preserving distinct issues.
+This kubectl plugin monitors deployment rollouts by polling the Kubernetes API every 5 seconds to track ReplicaSet transitions. It calculates rollout progress by comparing Available, Ready, and Current pod counts between old and new ReplicaSets. Warning events from pods are clustered to reduce noise while preserving distinct issues.
 
 ## Features
 
 - Live progress bars showing pod lifecycle stages (Current, Ready, Available) for new and old ReplicaSets
+- Pod grid visualization showing individual pod states at a glance
 - Estimated time to completion based on rollout velocity
 - Warning event aggregation with deduplication using configurable similarity threshold
 - Progress deadline detection with automatic failure recognition
 - Continuous monitoring mode for incident response and development iteration
 - Single-rollout mode (`--until-complete`) for CI/CD automation with exit code 0/1
-- Line mode (`--line-mode`) for timestamped, parseable output suitable for log aggregation
+- Line mode (`--line-mode`) for timestamped output in CI/CD pipelines
 
 ## Installation
 
@@ -54,11 +77,7 @@ make build
 Monitor a deployment across multiple rollouts. Exit with Ctrl+C when done.
 
 ```bash
-kubectl watch-rollout my-deployment -n production
-
-# With resource type prefix
-kubectl watch-rollout deployment/my-deployment -n production
-kubectl watch-rollout deployments.apps/my-deployment -n production
+kubectl watch-rollout my-deployment
 ```
 
 ### Single-Rollout Mode
@@ -66,21 +85,15 @@ kubectl watch-rollout deployments.apps/my-deployment -n production
 Exit after one rollout completes. Returns exit code 0 on success, 1 on failure.
 
 ```bash
-kubectl watch-rollout my-deployment -n production --until-complete
+kubectl watch-rollout my-deployment --until-complete
 ```
 
 ### Line Mode
 
-Timestamped, single-line output for log aggregation systems.
+Line output for CI/CD pipelines (see example above).
 
 ```bash
-kubectl watch-rollout my-deployment -n production --line-mode --until-complete
-
-# Example output:
-# 2025-10-12T14:20:00.123Z replicaset:api-7d8f9c status:progressing new:0/10 old:10/10 eta:-
-# 2025-10-12T14:20:05.456Z replicaset:api-7d8f9c status:progressing new:2/10 old:10/10 eta:4m25s
-#     WARNING: BackOff: Back-off restarting failed container (2x)
-# 2025-10-12T14:24:00.789Z replicaset:api-7d8f9c status:complete new:10/10 old:0/0 duration:4m0s
+kubectl watch-rollout my-deployment --line-mode --until-complete
 ```
 
 ### Event Filtering
@@ -114,7 +127,7 @@ kubectl watch-rollout my-deployment --kubeconfig=/path/to/config --context=my-co
 | `--until-complete` | Exit after one rollout completes | `false` |
 | `--line-mode` | Use line-based output format | `false` |
 | `--ignore-events` | Regex to filter events by "Reason: Message" | none |
-| `--similarity-threshold` | Event clustering threshold (0.0-1.0) | `0.85` |
+| `--similarity-threshold` | Event clustering threshold (0.0-1.0) | `0.5` |
 | `-n`, `--namespace` | Target namespace | current context |
 | `--context` | Kubeconfig context | current context |
 | `--kubeconfig` | Path to kubeconfig file | `~/.kube/config` |
